@@ -1,0 +1,21 @@
+# build outputs
+out/*
+!out/.gitkeep
+
+# do not commit signing keys
+*.pem
+*.key
+testkey*
+
+# python caches
+__pycache__/
+*.pyc
+
+# editor noise
+*.swp
+.idea/
+.vscode/
+
+# misc
+*.log
+*.tmp
