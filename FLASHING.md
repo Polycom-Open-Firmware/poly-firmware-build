@@ -102,9 +102,10 @@ fastboot flash system_a system.img
 
 The image bakes:
 
-- **Composite USB gadget** on the data port — plug into a host and you get both interfaces simultaneously:
+- **Composite USB gadget** on the data port — plug into a host and you get three interfaces simultaneously:
   - **CDC ACM** → `/dev/ttyACM0` (Linux) / "USB Serial Device" (Windows). systemd-getty spawns a login prompt automatically.
   - **CDC NCM** → `usb0` USB-Ethernet on the host. The panel runs a tiny systemd-networkd DHCP server on `10.55.0.1/24` and leases `.2`–`.5` to the host. ssh to the panel at **`10.55.0.1`** the moment the link comes up — no manual host config required on Linux/Mac. Windows may need to allow the network in its prompt.
+  - **MTP / Portable Device** — `/data` is exported as a Media Transfer Protocol storage by `umtprd` (uMTP-Responder). Drag-and-drop files in any native file manager: Windows Explorer, macOS Finder, GNOME Files, KDE Dolphin. Concurrent with the panel's own use of `/data` because MTP serves through the VFS (no block-level conflict, unlike USB Mass Storage).
 - **ssh** on the LAN (port 22) for hosts that share the panel's wired network.
 
 Default credentials: **`root` / `root`**. Override at build time with `TC8_ROOT_PASSWORD=foo ./build.sh ...` or write a single line to `rootfs/root_password` (gitignored). pubkey auth (via `rootfs/authorized_keys` or `TC8_SSH_PUBKEY=`) wins when present.
