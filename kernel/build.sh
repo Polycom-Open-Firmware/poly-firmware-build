@@ -108,8 +108,10 @@ else
   done
 fi
 
-# Install config
-cp "$CONFIG" .config
+# Install config: start from upstream arm64 defconfig, then merge our
+# TC8-specific overlay (tc8.config is a small fragment, not a full config).
+make ARCH="$ARCH" CROSS_COMPILE="$CROSS" defconfig
+scripts/kconfig/merge_config.sh -m .config "$CONFIG"
 make ARCH="$ARCH" CROSS_COMPILE="$CROSS" olddefconfig
 
 # Build
