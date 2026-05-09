@@ -2,6 +2,11 @@
 out/*
 !out/.gitkeep
 
+# vanilla linux source (cloned by bootstrap.sh)
+linux-6.6/
+linux/
+work/
+
 # do not commit signing keys
 *.pem
 *.key
