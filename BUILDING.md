@@ -16,7 +16,7 @@ sudo apt install -y \
     gcc-aarch64-linux-gnu \
     qemu-user-static binfmt-support \
     debootstrap rsync mtools \
-    e2fsprogs python3 openssl
+    e2fsprogs python3 openssl libssl-dev
 ```
 
 `binfmt-support` registers `/proc/sys/fs/binfmt_misc/qemu-aarch64` so `debootstrap --second-stage` can run arm64 binaries inside the chroot. Verify:
