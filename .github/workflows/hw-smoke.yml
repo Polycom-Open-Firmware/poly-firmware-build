@@ -1,0 +1,65 @@
+name: Hardware smoke test
+
+# Runs the hw-smoke-test.sh script against a real TC8 panel after a release
+# is published. ONLY triggers from this repo (release event) or a manual
+# workflow_dispatch — never from PRs or forks — so the self-hosted runner
+# is never exposed to untrusted code.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to smoke-test'
+        required: true
+        default: 'v0.1.0'
+
+jobs:
+  hw-smoke:
+    # The self-hosted runner registered with the `tc8-hardware` label has
+    # USB to the panel + can drive the PoE-cycle script + ssh to aibox.
+    runs-on: [self-hosted, tc8-hardware]
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out at the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          submodules: recursive
+
+      - name: Run hw-smoke-test against the just-published release
+        env:
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          # Lab-specific secrets configured in repo settings → Secrets and variables → Actions
+          SW_PASS: ${{ secrets.TC8_POE_SWITCH_PASSWORD }}
+          TC8_HOST_IP: ${{ vars.TC8_HOST_IP }}
+          TC8_HOST_PASS: ${{ secrets.TC8_HOST_PASS }}
+          TC8_FASTBOOT_HOST: ${{ vars.TC8_FASTBOOT_HOST }}
+        run: |
+          chmod +x scripts/hw-smoke-test.sh
+          ./scripts/hw-smoke-test.sh --tag "$TAG"
+
+      - name: Post smoke result to the release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+              gh release edit "$TAG" --notes-file - <<EOF
+          $(gh release view "$TAG" --json body -q .body)
+
+          ---
+          ✅ **Hardware smoke test passed** on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          (run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          else
+              gh release edit "$TAG" --notes-file - <<EOF
+          $(gh release view "$TAG" --json body -q .body)
+
+          ---
+          ❌ **Hardware smoke test failed** on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          (run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          fi

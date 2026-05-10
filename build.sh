@@ -95,18 +95,8 @@ if [[ -z "$OUT" ]]; then
     OUT="$REPO_ROOT/out/$profile_name"
 fi
 
-# Build rootfs lazily if needed
-if [[ $SKIP_ROOTFS -ne 1 && ! -e "$ROOTFS" ]]; then
-    echo "===> [0/5] rootfs build (no $ROOTFS yet)"
-    if [[ $EUID -eq 0 ]]; then
-        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh )
-    else
-        ( cd "$DEFAULT_ROOTFS_DIR" && sudo ./build.sh )
-    fi
-fi
-[[ -e "$ROOTFS" ]] || { echo "ERROR: rootfs not found at $ROOTFS" >&2; exit 1; }
-
-# Stamp version info from the three repos so the running image self-identifies.
+# Compute version refs from all 3 repos BEFORE the rootfs build, so we can
+# pass them through to rootfs/build.sh which writes /etc/tc8-version.
 # `git describe --dirty` produces e.g. "v0.1.0" on a clean release tag, or
 # "v0.1.0-3-g1234abc-dirty" on an in-progress dev build. The upgrade script
 # uses this to refuse OTA on non-release (dirty/untagged) images by default.
@@ -117,6 +107,20 @@ TC8_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 TC8_BUILD_HOST="$(hostname)"
 echo "[+] version: $TC8_FW_VERSION  rootfs=$TC8_ROOTFS_VERSION  patches=$TC8_PATCHES_VERSION"
 export TC8_FW_VERSION TC8_ROOTFS_VERSION TC8_PATCHES_VERSION TC8_BUILD_DATE TC8_BUILD_HOST
+
+# Build rootfs lazily if needed. `sudo` strips most env vars, so explicitly
+# preserve the version stamps + AVB key.
+if [[ $SKIP_ROOTFS -ne 1 && ! -e "$ROOTFS" ]]; then
+    echo "===> [0/5] rootfs build (no $ROOTFS yet)"
+    if [[ $EUID -eq 0 ]]; then
+        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh )
+    else
+        ( cd "$DEFAULT_ROOTFS_DIR" && \
+          sudo --preserve-env=TC8_FW_VERSION,TC8_ROOTFS_VERSION,TC8_PATCHES_VERSION,TC8_BUILD_DATE,TC8_BUILD_HOST,TC8_AVB_KEY,TC8_SSH_PUBKEY,TC8_ROOT_PASSWORD \
+              ./build.sh )
+    fi
+fi
+[[ -e "$ROOTFS" ]] || { echo "ERROR: rootfs not found at $ROOTFS" >&2; exit 1; }
 
 mkdir -p "$OUT"
 export TC8_AVB_KEY="$AVB_KEY"
