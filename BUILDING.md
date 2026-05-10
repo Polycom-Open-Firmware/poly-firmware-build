@@ -35,15 +35,24 @@ cd tc8-firmware-build
 
 ## 3. Set the AVB key
 
-You need an RSA-4096 PEM. For development, AOSP's test key works:
+You need an RSA-4096 PEM. For development, the AOSP public test key works:
 
 ```bash
-curl -O https://android.googlesource.com/platform/external/avb/+/refs/heads/main/test/data/testkey_rsa4096.pem?format=TEXT
-# (or grab from your AOSP checkout: external/avb/test/data/testkey_rsa4096.pem)
+./scripts/fetch-avb-test-key.sh
 export TC8_AVB_KEY=$PWD/testkey_rsa4096.pem
 ```
 
-Use your own key for production.
+The script pulls `external/avb/test/data/testkey_rsa4096.pem` from the AOSP source tree (gitiles, base64-decoded) and verifies it's a valid RSA-4096 PEM. Boots produced with this key pass AVB but show "orange state" on the panel — that's expected for development; the panel's u-boot has Polycom's pubkey burned in, so any non-Polycom-signed boot is "orange".
+
+For production fleets, generate your own:
+
+```bash
+openssl genrsa -out my-avb-key.pem 4096
+chmod 0600 my-avb-key.pem
+export TC8_AVB_KEY=$PWD/my-avb-key.pem
+```
+
+…and reflash u-boot's `vbmeta_pubkey` partition (out of scope here).
 
 ## 4. (Optional) Bake credentials
 
