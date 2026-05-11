@@ -102,10 +102,10 @@ scp "$REPO_ROOT/tools/uboot_watch.py" "$TC8_FASTBOOT_HOST:/tmp/uboot_watch.py" >
 # Step 3 — get into fastboot. Use plain nohup so the runner user (no
 # privileged systemd-run access) can launch the watcher.
 echo "[+] arming u-boot watcher and PoE-cycling panel"
-ssh -o BatchMode=yes "$TC8_FASTBOOT_HOST" 'pkill -9 -f uboot_watch.py 2>/dev/null; rm -f /tmp/uboot-watch.state'
-ssh -o BatchMode=yes -f "$TC8_FASTBOOT_HOST" 'python3 /tmp/uboot_watch.py >/tmp/uboot-watch.log 2>&1'
+ssh -o BatchMode=yes "$TC8_FASTBOOT_HOST" 'pkill -9 -f uboot_watch.py 2>/dev/null || true; rm -f /tmp/uboot-watch.state' || true
+ssh -o BatchMode=yes -f "$TC8_FASTBOOT_HOST" 'python3 /tmp/uboot_watch.py >/tmp/uboot-watch.log 2>&1' || true
 sleep 2
-ssh -o BatchMode=yes "$TC8_FASTBOOT_HOST" 'pgrep -af uboot_watch.py | head -1'
+ssh -o BatchMode=yes "$TC8_FASTBOOT_HOST" 'pgrep -af uboot_watch.py | head -1' || true
 eval "$TC8_POE_CYCLE"
 
 # Wait up to ~2 min for fastboot to enumerate
