@@ -22,11 +22,13 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out at the release tag
+      - name: Check out main for the smoke script
+        # Always run the latest hw-smoke-test.sh, not whatever the tag-being-
+        # tested froze. The script downloads the release artifacts for $TAG
+        # via `gh release download`, so the tag under test is independent.
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
-          submodules: recursive
+          ref: main
 
       - name: Run hw-smoke-test against the just-published release
         env:
