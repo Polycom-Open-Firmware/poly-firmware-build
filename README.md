@@ -70,14 +70,18 @@ sudo ./build.sh --profile=emmc
 # artifacts in out/emmc/{Image,imx8mm-tc8.dtb,rootfs.img}
 ```
 
-Install onto a panel:
+Install onto a panel (automated, via a brainslug probe + UMS):
 
 ```bash
 smoke/onboard.sh --brainslug http://10.99.0.35 \
-                 --fastboot-host aibox \
+                 --staging-host aibox \
                  --poe-port 3 \
                  --artifacts out/emmc
 ```
+
+Or follow [QUICKSTART.md](QUICKSTART.md) for a manual, no-brainslug recipe
+that takes about 15 minutes with just a USB-C cable and a serial UART
+probe.
 
 Default credentials baked into the image: **`root` / `root`** (works on
 tty, USB CDC ACM, and ssh — change before plugging into anything you
@@ -85,6 +89,7 @@ care about). See [BUILDING.md](BUILDING.md) for credential overrides.
 
 ## Documentation
 
+- **[QUICKSTART.md](QUICKSTART.md)** — 5-command hobbyist recipe to flash a panel by hand (UMS + dd, no brainslug needed)
 - **[BUILDING.md](BUILDING.md)** — host setup (Ubuntu), build pipeline, iterate
 - **[FLASHING.md](FLASHING.md)** — `onboard.sh`, partition layout, fw_setenv from running Linux, recovery
 - **[NETBOOT.md](NETBOOT.md)** — TFTP+NFS server setup, u-boot commands for dev-mode boots

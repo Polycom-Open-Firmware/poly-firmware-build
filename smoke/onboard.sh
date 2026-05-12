@@ -2,38 +2,53 @@
 # onboard.sh — take a TC8 panel from any known stock/dev state to our
 # flat-layout install. Idempotent: safe to re-run.
 #
+# Strategy: configure u-boot via UART (brainslug WebSocket), then expose
+# the eMMC as USB Mass Storage with u-boot's `ums` command and let the
+# host repartition + write artifacts using ordinary block-device tools
+# (sgdisk, dd). Stock TC8 u-boot has no `gpt` command and stock fastboot
+# has no `oem partition` — UMS sidesteps both.
+#
 # What it does:
-#   1. Drive the panel into u-boot via the brainslug (handles bootdelay=0
-#      by continuously spamming ^C before SPL prints).
-#   2. setenv bootdelay 3; saveenv  (defensive — easier intervention later).
-#   3. Write our flat GPT (kernel/kernel_bak/dtb/dtb_bak/rootfs/data) via
-#      u-boot's `gpt write mmc 1`. Stock dtbo_a/b/boot_a/b/system_a/b/
-#      vendor_a/b/etc are overwritten — the dump in
-#      /var/lib/vz/dump/tc8-2/ is the rollback artifact.
-#   4. fastboot 0 → flash `kernel`, `dtb`, `rootfs` partitions.
-#   5. Install u-boot env vars: slotbboot script, tc8_bootargs, bootcmd,
-#      boot_slot=main, bootdelay=3. saveenv. reset.
-#   6. Wait for ssh on the panel; light sanity check (uname + cmdline).
+#   1. Drive the panel into u-boot via the brainslug (smoke/catch_uboot.py
+#      now uses /uart/N/ws so this is sub-second).
+#   2. Set our u-boot env (slotbboot, tc8_bootargs, bootcmd, boot_slot,
+#      bootdelay=3) and saveenv — done first so it survives anything
+#      that happens during UMS.
+#   3. `ums 0 mmc 1` — panel exposes mmc dev 1 (eMMC user area) as USB
+#      Mass Storage. The mmcblkXboot0/1 hw-partitions where u-boot itself
+#      lives are NOT exposed, so u-boot is unclobberable.
+#   4. On the staging host (aibox): detect the new USB disk, sgdisk a
+#      flat GPT (kernel/kernel_bak/dtb/dtb_bak/rootfs/data), stream-write
+#      Image / imx8mm-tc8.dtb / rootfs.img straight to the partitions.
+#   5. ^C the UART to leave UMS, then `reset`.
+#   6. Wait for ssh on the panel; light sanity check.
 #
 # USAGE
-#   onboard.sh --brainslug http://10.99.0.35 --fastboot-host aibox \
-#              --poe-port 1 --artifacts /tmp/tc8-v0.3.0
+#   onboard.sh --brainslug http://10.99.0.35 --staging-host aibox \
+#              --poe-port 3 --artifacts /tmp/tc8-v0.3.0
 #
 # artifacts/ must contain:  Image  imx8mm-tc8.dtb  rootfs.img(.zst)
 #
 # ENV (override defaults)
-#   TC8_HOST_PASS    rooot ssh password baked into the image (default: root)
+#   TC8_HOST_PASS    root ssh password baked into the image (default: root)
 #   POE_SW_PASS      PoE switch admin password (default: $SW_PASS)
 #   SW_HOST          PoE switch IP (default: 192.168.10.243)
 
 set -euo pipefail
 
 BRAINSLUG="${BRAINSLUG:-http://10.99.0.35}"
-FASTBOOT_HOST="${FASTBOOT_HOST:-aibox}"
+# Historical name "fastboot host" preserved as an alias so old workflow envs
+# (TC8_FASTBOOT_HOST) keep working — staging-host is what it does now.
+STAGING_HOST="${STAGING_HOST:-${FASTBOOT_HOST:-aibox}}"
 POE_PORT=""
 ARTIFACTS=""
-SLOT="${SLOT:-main}"                       # main or bak — which slot to install into
-NO_REPARTITION="${NO_REPARTITION:-0}"      # 1 = skip GPT rewrite (just flash to existing kernel/dtb/rootfs partitions)
+SLOT="${SLOT:-main}"                       # main | bak — install slot
+NO_REPARTITION="${NO_REPARTITION:-0}"      # 1 = skip GPT rewrite (use existing partitions of same layout)
+ETHADDR="${TC8_ETHADDR:-}"                 # XX:XX:XX:XX:XX:XX — falls back to whatever
+                                           # u-boot env currently has (which may
+                                           # be empty on a panel we've previously
+                                           # mangled, in which case Linux makes
+                                           # up a random locally-administered MAC)
 : "${TC8_HOST_PASS:=root}"
 : "${SW_PASS:=${POE_SW_PASS:-}}"
 : "${SW_HOST:=192.168.10.243}"
@@ -41,170 +56,300 @@ NO_REPARTITION="${NO_REPARTITION:-0}"      # 1 = skip GPT rewrite (just flash to
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --brainslug)      BRAINSLUG="$2"; shift 2;;
-        --fastboot-host)  FASTBOOT_HOST="$2"; shift 2;;
+        --staging-host)   STAGING_HOST="$2"; shift 2;;
+        --fastboot-host)  STAGING_HOST="$2"; shift 2;;   # legacy alias
         --poe-port)       POE_PORT="$2"; shift 2;;
         --artifacts)      ARTIFACTS="$2"; shift 2;;
         --slot)           SLOT="$2"; shift 2;;
         --no-repartition) NO_REPARTITION=1; shift;;
-        -h|--help)        sed -n '2,40p' "$0"; exit 0;;
+        --ethaddr)        ETHADDR="$2"; shift 2;;
+        -h|--help)        sed -n '2,50p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 1;;
     esac
 done
 
-[[ -n "$POE_PORT"  ]] || { echo "ERROR: --poe-port required (1 / 2 / ...)" >&2; exit 1; }
+[[ -n "$POE_PORT"  ]] || { echo "ERROR: --poe-port required" >&2; exit 1; }
 [[ -n "$ARTIFACTS" ]] || { echo "ERROR: --artifacts DIR required" >&2; exit 1; }
 [[ -d "$ARTIFACTS" ]] || { echo "ERROR: $ARTIFACTS not a dir" >&2; exit 1; }
-[[ "$SLOT" == "main" || "$SLOT" == "bak" ]] || { echo "ERROR: --slot must be main or bak" >&2; exit 1; }
+[[ "$SLOT" == "main" || "$SLOT" == "bak" ]] || { echo "ERROR: --slot main|bak" >&2; exit 1; }
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Resolve artifacts. rootfs.img may be .zst; decompress to a scratch file.
 KERNEL="$ARTIFACTS/Image"
 DTB="$ARTIFACTS/imx8mm-tc8.dtb"
+# Resolve rootfs source. Prefer streaming the .zst through `zstd -dc` straight
+# to dd, so we never materialize the 14 GB decompressed file locally.
 ROOTFS="$ARTIFACTS/rootfs.img"
-if [[ ! -f "$ROOTFS" && -f "${ROOTFS}.zst" ]]; then
-    echo "[+] decompressing rootfs.img.zst"
-    zstd -d -q "${ROOTFS}.zst" -o "$ROOTFS"
+ROOTFS_ZST="$ARTIFACTS/rootfs.img.zst"
+ROOTFS_SRC_CMD=""    # set below — a shell pipeline that streams the raw image to stdout
+if [[ -f "$ROOTFS" ]]; then
+    ROOTFS_SRC_CMD="cat \"$ROOTFS\""
+elif [[ -f "$ROOTFS_ZST" ]]; then
+    ROOTFS_SRC_CMD="zstd -dc \"$ROOTFS_ZST\""
+else
+    echo "ERROR: need $ROOTFS or $ROOTFS_ZST" >&2; exit 1
 fi
-for f in "$KERNEL" "$DTB" "$ROOTFS"; do
+for f in "$KERNEL" "$DTB"; do
     [[ -f "$f" ]] || { echo "ERROR: missing $f" >&2; exit 1; }
 done
 
-# Brainslug UART helpers.
-ub() {
-    # send raw bytes; arg is literal $1 string
-    curl -fsS -X POST --data-binary "$1" \
-        -H "Content-Type: application/octet-stream" \
-        "$BRAINSLUG/uart/1/write" >/dev/null
-}
-ub_read() {
-    curl -fsS "$BRAINSLUG/uart/1/read"
-}
+ub()      { curl -fsS -X POST --data-binary "$1" -H "Content-Type: application/octet-stream" "$BRAINSLUG/uart/1/write" >/dev/null; }
+ub_read() { curl -fsS "$BRAINSLUG/uart/1/read"; }
+ub_cmd()  { local cmd="$1"; local wait_s="${2:-1}"; ub_read >/dev/null; ub "${cmd}"$'\r'; sleep "$wait_s"; ub_read || true; }
 
-# Drive panel into u-boot. Delegates to catch_uboot.py — bash+curl is
-# too slow at polling the slug for the 3s autoboot window; Python
-# managing a tight read-loop reliably catches the banner before slug's
-# 8 KiB UART ring overflows past it.
 catch_uboot() {
     echo "[+] PoE-cycling port $POE_PORT"
     SW_PASS="$SW_PASS" "$REPO_ROOT/smoke/poe_cycle.sh" cycle "$POE_PORT" >/dev/null
     python3 "$REPO_ROOT/smoke/catch_uboot.py" --brainslug "$BRAINSLUG"
 }
 
-# Synchronously send a u-boot command, return after $1 seconds.
-ub_cmd() {
-    local cmd="$1"; local wait_s="${2:-1}"
-    ub_read >/dev/null     # drain
-    ub "${cmd}"$'\r'
-    sleep "$wait_s"
-    ub_read || true
-}
-
-# Write our GPT via u-boot.  IMPORTANT: this nukes the stock Polycom A/B
-# layout. Run only when forensics dump exists OR you don't care.
-write_gpt() {
-    echo "[+] writing flat GPT"
-    # uuid_disk fixed so re-runs are idempotent and partprobes see consistent ids.
-    local gpt='uuid_disk=00112233-4455-6677-8899-aabbccddeeff;'
-    gpt+='name=kernel,start=0x8000,size=48MiB,type=raw;'
-    gpt+='name=kernel_bak,start=0x20000,size=48MiB,type=raw;'
-    gpt+='name=dtb,start=0x38000,size=4MiB,type=raw;'
-    gpt+='name=dtb_bak,start=0x3a000,size=4MiB,type=raw;'
-    gpt+='name=rootfs,start=0x3c000,size=13GiB,type=linux;'
-    gpt+='name=data,size=-,type=linux'
-    ub_cmd "setenv tc8_gpt '${gpt}'" 0.5 >/dev/null
-    ub_cmd "gpt write mmc 1 \"\$tc8_gpt\"" 5
-}
-
-# Install our u-boot env. tc8_bootargs takes the kernel cmdline; slotbboot
-# picks kernel/dtb partition by boot_slot.
 install_env() {
     local bootargs
-    bootargs="$(cat "$REPO_ROOT/profiles/emmc.env" | sed -n 's/^KERNEL_CMDLINE="\(.*\)"$/\1/p')"
-    # Override root= to our flat-layout rootfs partition (#5 in our GPT).
+    bootargs="$(sed -n 's/^KERNEL_CMDLINE="\(.*\)"$/\1/p' "$REPO_ROOT/profiles/emmc.env")"
+    # Force root onto the flat-layout rootfs partition (#5).
     bootargs="${bootargs//root=\/dev\/mmcblk2p6/root=\/dev\/mmcblk2p5}"
     bootargs="${bootargs//root=\/dev\/nfs nfsroot=*,nolock /}"
-    [[ "$bootargs" == *"root="* ]] || bootargs="${bootargs} root=/dev/mmcblk2p5"
+    [[ "$bootargs" == *"root="* ]] || bootargs+=" root=/dev/mmcblk2p5"
 
-    # slotbboot picks {kernel,dtb} or {kernel_bak,dtb_bak} based on boot_slot env.
-    local slotbboot='mmc dev 1; if test "${boot_slot}" = "bak"; then'
-    slotbboot+=' mmc read 0x40000000 0x20000 0x20000;'        # kernel_bak
-    slotbboot+=' mmc read 0x43400000 0x3a000 0x100;'          # dtb_bak
-    slotbboot+=' else'
-    slotbboot+=' mmc read 0x40000000 0x8000 0x20000;'         # kernel
-    slotbboot+=' mmc read 0x43400000 0x38000 0x100;'          # dtb
-    slotbboot+=' fi;'
-    slotbboot+=' setenv bootargs "${tc8_bootargs}";'
-    slotbboot+=' booti 0x40000000 - 0x43400000'
+    # slotbboot LBAs match write_gpt_ums layout (kernel starts at 16 MiB so it
+    # doesn't trample u-boot's env block at LBA 8192):
+    #   kernel       0x08000   48 MiB
+    #   kernel_bak   0x20000   48 MiB
+    #   dtb          0x38000    4 MiB
+    #   dtb_bak      0x3a000    4 MiB
+    #   rootfs       0x3c000   13 GiB
+    # Semicolons escaped as `\;` so u-boot's command parser doesn't split the
+    # env-var assignment mid-string. (u-boot's parser splits on bare `;`
+    # even inside single-quoted setenv arguments.) booti expects: kernel
+    # address, "-" for no initrd, dtb address.
+    local sb='mmc dev 1\; '
+    sb+='if test "${boot_slot}" = "bak"\; then '
+    sb+='mmc read 0x40000000 0x20000 0x18000\; '
+    sb+='mmc read 0x43400000 0x3a000 0x2000\; '
+    sb+='else '
+    sb+='mmc read 0x40000000 0x8000 0x18000\; '
+    sb+='mmc read 0x43400000 0x38000 0x2000\; '
+    sb+='fi\; '
+    sb+='setenv bootargs "${tc8_bootargs}"\; '
+    sb+='booti 0x40000000 - 0x43400000'
+
+    # Restore ethaddr if the env has lost it. Polycom u-boot wipes ethaddr
+    # when env is regenerated from defaults (which happens after a corrupt env
+    # — e.g., if a previous reflash trampled the env block at LBA 0x2000).
+    # Once set + saved, Polycom's per-boot auto-saveenv preserves it.
+    if [[ -n "$ETHADDR" ]]; then
+        echo "[+] setting ethaddr=$ETHADDR"
+    else
+        # Probe current env. Save any ethaddr we find so it survives the
+        # final saveenv. If none — Linux will get a random MAC on boot.
+        ub_read >/dev/null
+        ub "printenv ethaddr"$'\r'
+        sleep 1
+        local probe_resp
+        probe_resp="$(ub_read || true)"
+        local existing_eth
+        existing_eth="$(echo "$probe_resp" | grep -oE 'ethaddr=([0-9a-f]{2}:){5}[0-9a-f]{2}' | head -1 | cut -d= -f2)"
+        if [[ -n "$existing_eth" ]]; then
+            ETHADDR="$existing_eth"
+            echo "[+] preserving existing ethaddr=$ETHADDR"
+        else
+            echo "[!] no ethaddr in env and no --ethaddr passed; Linux will boot with a random MAC"
+        fi
+    fi
 
     echo "[+] installing u-boot env"
     ub_cmd "setenv bootdelay 3" 0.5 >/dev/null
     ub_cmd "setenv boot_slot ${SLOT}" 0.5 >/dev/null
+    [[ -n "$ETHADDR" ]] && ub_cmd "setenv ethaddr ${ETHADDR}" 0.5 >/dev/null
     ub_cmd "setenv tc8_bootargs '${bootargs}'" 0.5 >/dev/null
-    ub_cmd "setenv slotbboot '${slotbboot}'" 0.5 >/dev/null
+    ub_cmd "setenv slotbboot '${sb}'" 0.5 >/dev/null
     ub_cmd "setenv bootcmd 'run slotbboot'" 0.5 >/dev/null
     ub_cmd "saveenv" 3
 }
 
-run_fastboot() {
-    echo "[+] entering fastboot 0"
-    ub_cmd "fastboot 0" 1 >/dev/null
+UMS_DEV=""
 
-    echo "[+] waiting for fastboot device on $FASTBOOT_HOST"
+ums_open() {
+    echo "[+] enabling UMS on the panel"
+    # `ums 0 mmc 1` is a blocking u-boot command — it runs until ^C. Fire and
+    # forget; don't try to read a prompt back.
+    ub_read >/dev/null
+    ub "ums 0 mmc 1"$'\r'
+
+    # The TC8's UMS gadget always advertises as "Linux UMS disk" — match by
+    # that fingerprint rather than diffing snapshots, since a stale UMS link
+    # from a previous run would defeat a naive before/after compare.
+    echo "[+] waiting for USB mass storage to appear on $STAGING_HOST"
+    # grep returns 1 (no match) during the wait window — `|| true` keeps
+    # set -e + pipefail from killing us before USB enumeration completes.
+    local name=""
     for _ in $(seq 1 30); do
-        if ssh "$FASTBOOT_HOST" 'fastboot devices 2>/dev/null | grep -q Fastboot'; then
-            ssh "$FASTBOOT_HOST" 'fastboot devices'
-            break
-        fi
-        sleep 2
+        sleep 1
+        name="$({ ssh "$STAGING_HOST" 'ls /dev/disk/by-id/ 2>/dev/null' | \
+                  grep -E '^usb-Linux_UMS' | grep -vE -- '-part[0-9]+$' | head -1; } \
+                || true)"
+        [[ -n "$name" ]] && break
     done
+    [[ -n "$name" ]] || { echo "ERROR: UMS device never appeared" >&2; exit 1; }
 
-    # Stage artifacts on fastboot host.
-    local rd; rd="/tmp/tc8-onboard-$$"
-    ssh "$FASTBOOT_HOST" "mkdir -p $rd"
-    scp -q "$KERNEL" "$DTB" "$ROOTFS" "$FASTBOOT_HOST:$rd/"
+    UMS_DEV="$(ssh "$STAGING_HOST" "readlink -f /dev/disk/by-id/$name")"
+    local size
+    size="$(ssh "$STAGING_HOST" "blockdev --getsize64 $UMS_DEV")"
+    echo "[+] UMS device: $name -> $UMS_DEV ($size bytes)"
+    # Sanity guard: 16 GiB eMMC ~= 15.6 GB. Anything outside 8..32 GB
+    # is suspicious — refuse rather than risk hitting the wrong disk.
+    if [[ "$size" -lt 8000000000 || "$size" -gt 32000000000 ]]; then
+        echo "ERROR: UMS device size $size out of expected range; refusing to write" >&2
+        exit 1
+    fi
+}
 
-    local k_part="kernel"; local d_part="dtb"
-    [[ "$SLOT" == "bak" ]] && k_part="kernel_bak" d_part="dtb_bak"
+ums_close() {
+    echo "[+] flushing + closing UMS"
+    ssh "$STAGING_HOST" "sync" || true
+    # Ctrl-C breaks ums back to the u-boot prompt.
+    ub $'\x03' || true
+    sleep 2
+    ub_read >/dev/null || true
+}
 
-    echo "[+] flashing $k_part / $d_part / rootfs"
-    ssh "$FASTBOOT_HOST" "cd $rd && \
-        fastboot flash $k_part   Image            | tail -1 && \
-        fastboot flash $d_part   imx8mm-tc8.dtb   | tail -1 && \
-        fastboot flash rootfs    rootfs.img       | tail -2"
+preserve_magic_offsets() {
+    # Until v0.3.1 expands the GPT to carve around them, the cert + presistdata
+    # regions get wiped by our rootfs write. Dump them BEFORE zapping the GPT
+    # so they're recoverable. Skipped if a previous dump exists.
+    local dump_dir="/var/lib/vz/dump/tc8-magic-preflight"
+    local ts; ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    ssh "$STAGING_HOST" "mkdir -p $dump_dir" || return 0
+    # Snapshot the env block (always nice to have) + cert + presistdata. Hex
+    # offsets in decimal: env=8192, cert=11763712, presistdata=11780096; each
+    # 2048 sectors except env which is 8.
+    ssh "$STAGING_HOST" "
+        F=$dump_dir/preflight-\${HOSTNAME:-tc}-$ts.tar
+        cd $dump_dir
+        dd if=$UMS_DEV bs=512 skip=8192       count=8    of=uboot-env.bin       status=none 2>/dev/null || true
+        dd if=$UMS_DEV bs=512 skip=11763712   count=2048 of=cert.bin            status=none 2>/dev/null || true
+        dd if=$UMS_DEV bs=512 skip=11780096   count=2048 of=presistdata.bin     status=none 2>/dev/null || true
+        # Only keep the snapshot if at least one of cert/presistdata has
+        # nonzero content — otherwise this panel's already been flashed and
+        # the dumps would just be old rootfs garbage.
+        if [ \$(stat -c%s cert.bin) -gt 0 ] && grep -qE '^subject=.*Polycom' <(openssl x509 -in cert.bin -inform PEM -noout -subject 2>/dev/null); then
+            tar cf \$F uboot-env.bin cert.bin presistdata.bin 2>/dev/null
+            echo \"[+] saved magic-offset preflight to \$F\"
+            rm -f uboot-env.bin cert.bin presistdata.bin
+        else
+            rm -f uboot-env.bin cert.bin presistdata.bin
+            echo '[!] no factory cert detected — skipping preflight snapshot (panel previously flashed?)'
+        fi
+    " || true
+}
 
-    ssh "$FASTBOOT_HOST" "rm -rf $rd"
+write_gpt_ums() {
+    echo "[+] writing flat GPT via sgdisk on $STAGING_HOST"
+    # u-boot env block at byte offset 4 MiB (LBA 0x2000, 8 sectors). If our
+    # partitions start below LBA 0x4000 our writes wipe the env and the panel
+    # silently reverts to stock `boota mmc1` — losing `ethaddr` etc. We start
+    # the first partition at 16 MiB (= LBA 0x8000) with margin.
+    #
+    # WARNING — known landmines this layout currently TRAMPLES (TODO v0.3.1):
+    #   - stock `cert` partition at LBA 0x00b38000 (5.6 GiB into the disk):
+    #     1 MiB of per-device RSA private key.
+    #   - stock `presistdata` at LBA 0x00b3c000: 36 bytes of factory device
+    #     identity data.
+    # The rootfs partition below spans 16 MiB to ~13 GiB and overwrites both.
+    # Preserving them needs a smaller rootfs.img (~5 GiB) so partitions can
+    # be carved around the magic offsets. Until then, *do not onboard a
+    # factory-pristine panel without first capturing /dev/mmcblk2p9 +
+    # /dev/mmcblk2p12* — those bytes are otherwise unrecoverable.
+    #
+    # `0x...` hex sector arguments are silently parsed as 0 by sgdisk — use
+    # MiB / GiB suffixes. Start=0 = first free sector after previous.
+    ssh "$STAGING_HOST" "sgdisk --zap-all $UMS_DEV >/dev/null"
+    ssh "$STAGING_HOST" "sgdisk \
+        --disk-guid=00112233-4455-6677-8899-aabbccddeeff \
+        -n 1:16M:+48M    -c 1:kernel      -t 1:8300 \
+        -n 2:0:+48M      -c 2:kernel_bak  -t 2:8300 \
+        -n 3:0:+4M       -c 3:dtb         -t 3:8300 \
+        -n 4:0:+4M       -c 4:dtb_bak     -t 4:8300 \
+        -n 5:0:+13G      -c 5:rootfs      -t 5:8300 \
+        -n 6:0:0         -c 6:data        -t 6:8300 \
+        $UMS_DEV >/dev/null"
+    ssh "$STAGING_HOST" "blockdev --rereadpt $UMS_DEV; udevadm settle"
+}
+
+write_partitions_ums() {
+    local k_idx=1 d_idx=3
+    [[ "$SLOT" == "bak" ]] && k_idx=2 d_idx=4
+
+    # Resolve partition device names — sg disks use /dev/sdX1, mmc would use p1.
+    local kpart dpart rpart
+    kpart="${UMS_DEV}${k_idx}"
+    dpart="${UMS_DEV}${d_idx}"
+    rpart="${UMS_DEV}5"
+    if [[ "$UMS_DEV" == *[0-9] ]]; then
+        kpart="${UMS_DEV}p${k_idx}"
+        dpart="${UMS_DEV}p${d_idx}"
+        rpart="${UMS_DEV}p5"
+    fi
+    echo "[+] writing kernel -> $kpart, dtb -> $dpart, rootfs -> $rpart"
+
+    # Stream from runner -> staging host -> block device. dd of= runs on the
+    # staging host; the runner pipes. rootfs may be a .zst — decompressed
+    # on the fly so we never need 14 GB free locally.
+    cat "$KERNEL" | ssh "$STAGING_HOST" "dd of=$kpart bs=1M conv=fsync status=none"
+    cat "$DTB"    | ssh "$STAGING_HOST" "dd of=$dpart bs=1M conv=fsync status=none"
+    echo "[+] streaming rootfs -> $rpart (this takes a few minutes)"
+    bash -c "$ROOTFS_SRC_CMD" \
+        | ssh "$STAGING_HOST" "dd of=$rpart bs=4M conv=fsync status=none"
+}
+
+wait_for_ssh() {
+    echo "[+] panel rebooting; waiting for ssh"
+    # We can't pre-filter by MAC: mainline-Linux on the panel doesn't program
+    # the baked Polycom MAC into the FEC, so end0/lan get random locally-
+    # administered MACs at boot. Instead, probe every IP that ARP'd recently
+    # and accept the first one whose /proc/cmdline matches the flat layout
+    # (`root=/dev/mmcblk2p5`). Reachable but mismatched IPs get cached so we
+    # don't keep ssh'ing them on every iteration.
+    local tried=""
+    for _ in $(seq 1 90); do
+        sleep 3
+        local ips
+        ips="$(ssh "$STAGING_HOST" "ip neigh | grep -v fe80 | awk '/REACHABLE|STALE/ && \$1 ~ /^[0-9]/ {print \$1}'" 2>/dev/null | sort -u)"
+        for ip in $ips; do
+            case " $tried " in *" $ip "*) continue;; esac
+
+            local cmdline
+            cmdline="$(sshpass -p "$TC8_HOST_PASS" ssh -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3 \
+                "root@$ip" 'cat /proc/cmdline 2>/dev/null' 2>/dev/null)"
+            if [[ "$cmdline" == *"root=/dev/mmcblk2p5"* ]]; then
+                echo "[+] flat-layout panel @ $ip"
+                sshpass -p "$TC8_HOST_PASS" ssh -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+                    "root@$ip" 'cat /etc/tc8-version; uname -a; cat /proc/cmdline; df / | tail -1' 2>/dev/null
+                echo "[OK] onboard complete: $ip"
+                return 0
+            elif [[ -n "$cmdline" ]]; then
+                # Reachable as root but not our panel — never recheck.
+                tried="$tried $ip"
+            fi
+        done
+    done
+    echo "ERROR: never reached a flat-layout panel on ssh" >&2
+    return 2
 }
 
 # ---- main ----
 catch_uboot
-if [[ "$NO_REPARTITION" -ne 1 ]]; then
-    write_gpt
-fi
 install_env
-run_fastboot
+ums_open
+if [[ "$NO_REPARTITION" -ne 1 ]]; then
+    preserve_magic_offsets
+    write_gpt_ums
+fi
+write_partitions_ums
+ums_close
 
-echo "[+] exiting fastboot back to u-boot, then reset"
-# Exit fastboot — Ctrl-C over UART, then reset.
-ub $'\x03\x03' || true
-sleep 1
+echo "[+] reset"
 ub_cmd "reset" 0.5 >/dev/null
-
-echo "[+] panel rebooting; waiting for ssh"
-# Wait for a tc8 panel to reappear on the LAN.
-for _ in $(seq 1 90); do
-    if ssh "$FASTBOOT_HOST" "ip neigh | grep -iE '00:e0:db' | grep -v fe80 | head -1" 2>/dev/null | grep -q REACHABLE; then
-        ip="$(ssh "$FASTBOOT_HOST" "ip neigh | grep -iE '00:e0:db' | grep -v fe80 | awk '{print \$1}' | head -1")"
-        echo "[+] panel @ $ip; trying ssh"
-        if sshpass -p "$TC8_HOST_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                -o LogLevel=ERROR -o ConnectTimeout=5 "root@$ip" \
-                'cat /etc/tc8-version; uname -a; cat /proc/cmdline' 2>/dev/null; then
-            echo "[OK] onboard complete: $ip"
-            exit 0
-        fi
-    fi
-    sleep 3
-done
-
-echo "ERROR: never reached ssh on panel" >&2
-exit 2
+wait_for_ssh

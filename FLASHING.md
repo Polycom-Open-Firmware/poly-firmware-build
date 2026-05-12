@@ -56,7 +56,7 @@ Onboarding is one command:
 ```bash
 smoke/onboard.sh \
     --brainslug http://10.99.0.35 \
-    --fastboot-host aibox \
+    --staging-host aibox \
     --poe-port 3 \
     --artifacts /tmp/tc8-v0.3.0
 ```
@@ -66,20 +66,39 @@ The artifacts directory must contain:
 - `imx8mm-tc8.dtb`
 - `rootfs.img` or `rootfs.img.zst`
 
+The staging host (`--staging-host`) must be ssh-reachable and have these
+packages installed: `gdisk`, `util-linux` (provides `blockdev`,
+`udevadm`), `zstd`, `dd`. Root or passwordless sudo is needed so the
+script can write to a block device.
+
 What it does:
 
 1. Spams Ctrl-C at the panel UART via the brainslug while the script
    PoE-cycles the panel. Catches u-boot even on stock units with
    `bootdelay=0` (no `Hit any key` window).
-2. `setenv bootdelay 3; saveenv` — gives future intervention a 3-second
-   window.
-3. Writes the flat GPT via `gpt write mmc 1 …`.
-4. `fastboot 0` over UART, then `fastboot flash kernel Image`,
-   `fastboot flash dtb imx8mm-tc8.dtb`, `fastboot flash rootfs rootfs.img`.
-5. Installs the u-boot env (`slotbboot`, `tc8_bootargs`, `bootcmd`,
-   `boot_slot=main`).
-6. `reset` → kernel comes up via `slotbboot`. Waits for ssh, prints the
-   version banner.
+2. Installs our u-boot env vars (`slotbboot`, `tc8_bootargs`, `bootcmd`,
+   `boot_slot=main`, `bootdelay=3`) and `saveenv`. Done first so the env
+   survives anything that happens during the disk-write phase.
+3. `ums 0 mmc 1` over UART — the panel exposes the eMMC user area as a
+   USB Mass Storage gadget on the staging host. u-boot itself lives on
+   the eMMC's boot HW partitions, which `ums` does *not* expose, so the
+   bootloader is unclobberable.
+4. From the staging host: detects the new `/dev/sdX`, `sgdisk`s a flat
+   GPT (kernel/kernel_bak/dtb/dtb_bak/rootfs/data), and stream-writes
+   `Image` / `imx8mm-tc8.dtb` / `rootfs.img.zst` straight into the right
+   partitions with `dd conv=fsync`. The runner pipes the rootfs through
+   `zstd -dc` so the 14 GiB decompressed image never has to land on disk
+   on either side.
+5. Ctrl-C the UART to leave `ums`, then `reset`.
+6. The panel reboots, `slotbboot` raw-reads our kernel + DTB from their
+   partitions, and Linux comes up. Waits for ssh on the LAN, confirms
+   it's the right panel by matching `root=/dev/mmcblk2p5` in
+   `/proc/cmdline`, prints the version banner.
+
+Why UMS instead of fastboot: stock TC8 u-boot has neither `gpt write` nor
+fastboot's `oem partition`, so neither can install a fresh partition
+table. UMS sidesteps both by handing the eMMC to the host and letting
+ordinary block-device tools (`sgdisk`, `dd`) do the work.
 
 The script is idempotent — re-running it reflashes cleanly. Pass
 `--slot bak` to write to the backup slot instead of `main`.
