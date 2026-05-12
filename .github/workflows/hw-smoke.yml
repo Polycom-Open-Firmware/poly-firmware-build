@@ -22,7 +22,10 @@ jobs:
     # The self-hosted runner registered with the `tc8-hardware` label has
     # USB to the panel + can drive the PoE-cycle script + ssh to aibox.
     runs-on: [self-hosted, tc8-hardware]
-    timeout-minutes: 15
+    # Rootfs streaming over UMS to the panel's eMMC takes 8-12 min alone
+    # (USB 2 mass-storage write speed). Add catch_uboot, sgdisk, env install,
+    # post-install reboot+ssh wait, and the budget needs to be 25+ min.
+    timeout-minutes: 30
 
     steps:
       - name: Check out main for the smoke script
