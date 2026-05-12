@@ -81,65 +81,14 @@ ub_read() {
     curl -fsS "$BRAINSLUG/uart/1/read"
 }
 
-# Drive panel into u-boot. Strategy lifted from smoke/uboot_watch.py
-# (which we know works): PoE-cycle the panel, accumulate UART output,
-# wait for "Hit any key to stop autoboot" — the moment that banner
-# appears the next ~3s is the interrupt window. Hit it hard, then
-# confirm with a CR. Bootdelay=0 panels never print this banner so for
-# those we fall back to a continuous-spam catch.
+# Drive panel into u-boot. Delegates to catch_uboot.py — bash+curl is
+# too slow at polling the slug for the 3s autoboot window; Python
+# managing a tight read-loop reliably catches the banner before slug's
+# 8 KiB UART ring overflows past it.
 catch_uboot() {
-    echo "[+] PoE-cycling port $POE_PORT, watching for autoboot banner"
+    echo "[+] PoE-cycling port $POE_PORT"
     SW_PASS="$SW_PASS" "$REPO_ROOT/smoke/poe_cycle.sh" cycle "$POE_PORT" >/dev/null
-
-    local buf="" last_tail=""
-    local deadline=$((SECONDS + 120))
-    # Phase 1: wait for the banner OR run out of patience.
-    while (( SECONDS < deadline )); do
-        local chunk
-        chunk="$(ub_read 2>/dev/null || true)"
-        if [[ -n "$chunk" ]]; then
-            buf+="$chunk"
-            buf="${buf: -16384}"   # cap at 16K
-            last_tail="${chunk: -200}"
-            if [[ "$buf" == *"Hit any key to stop autoboot"* ]]; then
-                echo "[+] autoboot banner seen — slamming ^C"
-                break
-            fi
-        fi
-        sleep 0.1
-    done
-
-    # If no banner ever, the panel might have bootdelay=0 (no printed
-    # countdown). Issue a fast continuous-spam attempt — only useful for
-    # fresh-stock units with bootdelay=0.
-    if [[ "$buf" != *"Hit any key to stop autoboot"* ]]; then
-        echo "[+] no banner — assuming bootdelay=0; constant spam"
-    fi
-
-    # Phase 2: aggressive Ctrl-C for 3 seconds.
-    local burst
-    burst="$(printf '\x03 \r%.0s' {1..16})"
-    for _ in {1..120}; do
-        ub "$burst" 2>/dev/null || true
-        sleep 0.025
-    done
-
-    # Phase 3: drain and confirm prompt.
-    sleep 0.5
-    ub_read >/dev/null 2>&1 || true
-    ub $'\r' 2>/dev/null || true
-    sleep 0.7
-    local confirm
-    confirm="$(ub_read 2>/dev/null || true)"
-    if [[ "$confirm" == *"u-boot=> "* || "$confirm" == *"=>"* ]]; then
-        echo "[+] u-boot prompt caught"
-        return 0
-    fi
-
-    echo "ERROR: never caught u-boot prompt" >&2
-    echo "    confirm tail: ${confirm:-(no data)}" >&2
-    echo "    last raw tail: ${last_tail:-(no recent data)}" >&2
-    return 1
+    python3 "$REPO_ROOT/smoke/catch_uboot.py" --brainslug "$BRAINSLUG"
 }
 
 # Synchronously send a u-boot command, return after $1 seconds.
