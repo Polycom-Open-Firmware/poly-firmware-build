@@ -328,13 +328,21 @@ write_partitions_ums() {
 wait_for_ssh() {
     echo "[+] panel rebooting; waiting for ssh"
     # We can't pre-filter by MAC: mainline-Linux on the panel doesn't program
-    # the baked Polycom MAC into the FEC, so end0/lan get random locally-
-    # administered MACs at boot. Instead, probe every IP that ARP'd recently
-    # and accept the first one whose /proc/cmdline matches the flat layout
-    # (`root=/dev/mmcblk2p5`). Reachable but mismatched IPs get cached so we
-    # don't keep ssh'ing them on every iteration.
+    # the baked Polycom MAC into the FEC by default, so end0/lan can get
+    # random locally-administered MACs. Instead, probe every IP that ARP'd
+    # recently and accept the first one whose /proc/cmdline matches the flat
+    # layout (`root=/dev/mmcblk2p5`). Reachable but mismatched IPs get
+    # cached so we don't keep ssh'ing them on every iteration.
+    #
+    # Drop strict mode for the loop body — set -e + pipefail trip on any
+    # ssh/sshpass non-zero exit (timeout, refused, wrong password, no host)
+    # and those are EXPECTED while the panel reboots. The function returns
+    # explicit status codes.
+    set +e
     local tried=""
-    for _ in $(seq 1 90); do
+    local found=""
+    local i
+    for i in $(seq 1 90); do
         sleep 3
         local ips
         ips="$(ssh "$STAGING_HOST" "ip neigh | grep -v fe80 | awk '/REACHABLE|STALE/ && \$1 ~ /^[0-9]/ {print \$1}'" 2>/dev/null | sort -u)"
@@ -350,14 +358,19 @@ wait_for_ssh() {
                 sshpass -p "$TC8_HOST_PASS" ssh -o StrictHostKeyChecking=no \
                     -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
                     "root@$ip" 'cat /etc/tc8-version; uname -a; cat /proc/cmdline; df / | tail -1' 2>/dev/null
-                echo "[OK] onboard complete: $ip"
-                return 0
+                found="$ip"
+                break 2
             elif [[ -n "$cmdline" ]]; then
                 # Reachable as root but not our panel — never recheck.
                 tried="$tried $ip"
             fi
         done
     done
+    set -e
+    if [[ -n "$found" ]]; then
+        echo "[OK] onboard complete: $found"
+        return 0
+    fi
     echo "ERROR: never reached a flat-layout panel on ssh" >&2
     return 2
 }
