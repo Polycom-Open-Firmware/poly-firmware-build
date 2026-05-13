@@ -95,6 +95,13 @@ TC8_HOST_PASS="$TC8_HOST_PASS" \
 # panel's mainline kernel doesn't preserve the baked-in 00:e0:db MAC, so
 # filtering by MAC prefix would miss it.
 discover_ip() {
+    # set +e through the probe loop: sshpass returns non-zero for IPs that
+    # aren't a TC8 (wrong creds, refused, etc.) and that's expected. With
+    # set -euo pipefail at script top, a non-zero substitution inside a
+    # `local x=...` assignment kills the whole script before we ever print
+    # the panel IP.
+    set +e
+    local found=""
     local ips
     ips="$(ssh "$TC8_FASTBOOT_HOST" \
         "ip neigh | grep -v fe80 | awk '/REACHABLE|STALE/ && \$1 ~ /^[0-9]/ {print \$1}'" 2>/dev/null | sort -u)"
@@ -104,11 +111,13 @@ discover_ip() {
             -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3 \
             "root@$ip" 'cat /proc/cmdline 2>/dev/null' 2>/dev/null)"
         if [[ "$cmdline" == *"root=/dev/mmcblk2p5"* ]]; then
-            echo "$ip"
-            return 0
+            found="$ip"
+            break
         fi
     done
-    return 1
+    set -e
+    [[ -n "$found" ]] || return 1
+    echo "$found"
 }
 
 PANEL_IP=""
