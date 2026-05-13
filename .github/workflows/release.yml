@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write   # needed to create the release + upload assets
+  actions: write    # needed to gh workflow run hw-smoke.yml after release publishes
 
 jobs:
   build:
