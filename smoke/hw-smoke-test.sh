@@ -142,7 +142,7 @@ check() {
 }
 
 check version              ". /etc/tc8-version && echo \$TC8_FW_VERSION"      "^v[0-9]"
-check rootfs_partition     "df / | awk 'NR==2{print \$1}'"                   "mmcblk2p5"
+check rootfs_partition     "findmnt -n -o SOURCE /"                          "mmcblk2p5"
 check display_card1        "ls /dev/dri/ | tr '\n' ' '"                      "card0.*card1"
 check dsi_connected        "cat /sys/class/drm/card1-DSI-1/status"           "^connected$"
 check audio_card           "aplay -l 2>&1 | grep tas5751"                    "tas5751-audio"
