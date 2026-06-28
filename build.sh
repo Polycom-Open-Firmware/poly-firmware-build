@@ -1,10 +1,38 @@
 #!/usr/bin/env bash
 # build.sh — top-level pipeline: build kernel, then a flat-layout rootfs.img.
 #
-# The TC8 boots via raw `mmc read` + `booti` (see FLASHING.md). There is no
-# AVB on the data path, so we don't emit boot.img / dtbo.img / vbmeta.img
-# anymore — those were never validated by the bootloader on either of the
-# panels we've seen. What ships:
+# SLOTABLE ANDROID MODEL (option A — keep the stock Android GPT):
+# Our Linux ships as Android *slot B* alongside stock Android in slot A, booted
+# by NXP `boota` (the established Android path). The DTB lives in the dtbo
+# partition (Android DTBO container), NOT in boot.img's `second` — mirroring how
+# stock Android pairs boot_X + dtbo_X. We emit:
+#
+#   out/<profile>/boot.img   Android boot.img v0 = kernel + EMPTY ramdisk +
+#                            our Debian cmdline (pagesize 2048, base 0x40000000,
+#                            kernel @ 0x40080000). No DTB inside.
+#   out/<profile>/dtbo.img   imx8mm-tc8.dtb wrapped in an Android DTBO container
+#                            (magic 0xd7b7ab1e; inner FDT @ 0x40).
+#   out/<profile>/vbmeta.img AVB top-level vbmeta carrying hash descriptors for
+#                            `boot` and `dtbo` (algorithm NONE = unsigned).
+#
+# AVB METADATA (so NXP `boota` will boot slot B): boot.img/dtbo.img each get an
+# AVB hash *footer* (add_hash_footer) and vbmeta.img bundles their hash
+# descriptors (make_vbmeta_image). All are produced with `--algorithm NONE` —
+# i.e. UNSIGNED but structurally valid. `boota` loads vbmeta_b first; with the
+# bootloader UNLOCKED it forgives the missing/mismatched signature, but the
+# descriptors+footers must EXIST — an image with NO vbmeta is rejected as
+# INVALID_METADATA. add_hash_footer grows each image to exactly its GPT
+# partition size (boot_b=48 MiB, dtbo_b=4 MiB) with the footer at the end; the
+# ANDROID!/DTBO headers stay intact at offset 0.
+#
+# Flash into the B-slot alongside stock Android (slot A):
+#   fastboot flash boot_b   out/emmc/boot.img
+#   fastboot flash dtbo_b   out/emmc/dtbo.img
+#   fastboot flash vbmeta_b out/emmc/vbmeta.img
+# AVB runs UNLOCKED — these images are unsigned (--algorithm NONE) by design and
+# boot only because the bootloader runs unlocked.
+#
+# Also shipped (raw artifacts, for booti / flat-layout install per FLASHING.md):
 #
 #   out/<profile>/Image              raw kernel (booti reads this directly)
 #   out/<profile>/imx8mm-tc8.dtb     raw device tree
@@ -154,6 +182,60 @@ rootfs_args=( --rootfs="$ROOTFS" --out="$OUT/rootfs.img" )
 cp "$KIMG" "$OUT/Image"
 cp "$DTB"  "$OUT/imx8mm-tc8.dtb"
 
+# The PRIMARY boot artifacts: an Android boot.img v0 (kernel + EMPTY ramdisk,
+# NO DTB inside) paired with a dtbo.img (DTB in an Android DTBO container). This
+# is the slotable Android model — flashed to the stock `boot_b` / `dtbo_b` GPT
+# partitions and booted by NXP `boota` (the established Android path) alongside
+# stock Android in slot A. Geometry matches stock (pagesize 2048, base
+# 0x40000000, kernel @ 0x40080000). The cmdline is our Debian kernel cmdline so
+# the DSI panel + root=PARTLABEL=userdata work; it must match the stage-2
+# board default `tc8_bootargs` (imx8mm_evk.c).
+TC8_CMDLINE="console=tty0 console=ttymxc1,115200 earlycon=ec_imx6q,0x30890000,115200 keep_bootcon panic=10 rw rootwait fw_devlink=permissive video=DSI-1:rotate=270 fbcon=rotate:3 vt.global_cursor_default=0 root=PARTLABEL=userdata"
+
+echo "===> [2.5/3] Android boot.img (boot_b) — kernel + empty ramdisk + cmdline, AVB-free v0"
+python3 "$REPO_ROOT/tools/mkbootimg.py" \
+  --header_version 0 --pagesize 2048 \
+  --base 0x40000000 --kernel_offset 0x00080000 \
+  --ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
+  --cmdline "$TC8_CMDLINE" \
+  --kernel "$OUT/Image" \
+  --output "$OUT/boot.img"
+
+echo "===> [2.5/3] Android dtbo.img (dtbo_b) — imx8mm-tc8.dtb in DTBO container"
+python3 "$REPO_ROOT/tools/mkdtboimg.py" create "$OUT/dtbo.img" \
+  --dtb "$OUT/imx8mm-tc8.dtb"
+
+# AVB metadata for the slot-B Android images. NXP `boota` loads vbmeta_b first
+# and refuses an image with NO vbmeta (INVALID_METADATA) even when UNLOCKED — it
+# only forgives signature/hash *mismatches*, not absent metadata. So we add an
+# AVB hash footer to boot.img + dtbo.img and emit a top-level vbmeta.img
+# bundling both hash descriptors. All use `--algorithm NONE`: unsigned but
+# structurally valid (boots only because the bootloader runs unlocked).
+#
+# add_hash_footer grows each image to EXACTLY its GPT partition size with the
+# footer at the tail (boot_b=98304 sectors=50331648 B=48 MiB; dtbo_b=8192
+# sectors=4194304 B=4 MiB). The ANDROID!/DTBO magic stays at offset 0, so the
+# images remain valid Android containers. NONE needs no external crypto — pure
+# python3 stdlib (hashlib SHA256 for the descriptor, no signing).
+BOOT_PARTITION_SIZE=50331648   # boot_b  = 98304 sectors (48 MiB)
+DTBO_PARTITION_SIZE=4194304    # dtbo_b  = 8192  sectors (4 MiB)
+
+echo "===> [2.6/3] AVB hash footer on boot.img (partition boot, ${BOOT_PARTITION_SIZE} B)"
+python3 "$REPO_ROOT/tools/avbtool" add_hash_footer \
+  --image "$OUT/boot.img" --partition_name boot \
+  --partition_size "$BOOT_PARTITION_SIZE" --algorithm NONE
+
+echo "===> [2.6/3] AVB hash footer on dtbo.img (partition dtbo, ${DTBO_PARTITION_SIZE} B)"
+python3 "$REPO_ROOT/tools/avbtool" add_hash_footer \
+  --image "$OUT/dtbo.img" --partition_name dtbo \
+  --partition_size "$DTBO_PARTITION_SIZE" --algorithm NONE
+
+echo "===> [2.6/3] AVB vbmeta.img (vbmeta_b) — hash descriptors for boot + dtbo, unsigned"
+python3 "$REPO_ROOT/tools/avbtool" make_vbmeta_image \
+  --output "$OUT/vbmeta.img" --algorithm NONE \
+  --include_descriptors_from_image "$OUT/boot.img" \
+  --include_descriptors_from_image "$OUT/dtbo.img"
+
 echo "===> [3/3] SHA256SUMS + version stamp"
 cat > "$OUT/version.env" <<EOF
 TC8_FW_VERSION=$TC8_FW_VERSION
@@ -162,6 +244,12 @@ TC8_PATCHES_VERSION=$TC8_PATCHES_VERSION
 TC8_BUILD_DATE=$TC8_BUILD_DATE
 TC8_BUILD_HOST=$TC8_BUILD_HOST
 EOF
-( cd "$OUT" && sha256sum Image imx8mm-tc8.dtb rootfs.img version.env > SHA256SUMS && cat SHA256SUMS )
+( cd "$OUT" && sha256sum Image imx8mm-tc8.dtb boot.img dtbo.img vbmeta.img rootfs.img version.env > SHA256SUMS && cat SHA256SUMS )
 
-echo "[OK] all artifacts in $OUT"
+echo "[OK] all artifacts in $OUT:"
+echo "       Image            raw kernel"
+echo "       imx8mm-tc8.dtb   raw device tree"
+echo "       boot.img         Android boot.img v0 + AVB hash footer (NONE)   -> fastboot flash boot_b"
+echo "       dtbo.img         Android DTBO + AVB hash footer (NONE)          -> fastboot flash dtbo_b"
+echo "       vbmeta.img       AVB vbmeta, hash descriptors boot+dtbo (NONE)  -> fastboot flash vbmeta_b"
+echo "       rootfs.img       ext4 rootfs                                   -> userdata (root=PARTLABEL=userdata)"
