@@ -2,14 +2,14 @@
 # onboard.sh — take a TC8 panel from any known stock/dev state to our
 # flat-layout install. Idempotent: safe to re-run.
 #
-# Strategy: configure u-boot via UART (brainslug WebSocket), then expose
+# Strategy: configure u-boot via UART (network UART probe WebSocket), then expose
 # the eMMC as USB Mass Storage with u-boot's `ums` command and let the
 # host repartition + write artifacts using ordinary block-device tools
 # (sgdisk, dd). Stock TC8 u-boot has no `gpt` command and stock fastboot
 # has no `oem partition` — UMS sidesteps both.
 #
 # What it does:
-#   1. Drive the panel into u-boot via the brainslug (smoke/catch_uboot.py
+#   1. Drive the panel into u-boot via the network UART probe (smoke/catch_uboot.py
 #      now uses /uart/N/ws so this is sub-second).
 #   2. Set our u-boot env (slotbboot, tc8_bootargs, bootcmd, boot_slot,
 #      bootdelay=3) and saveenv — done first so it survives anything
@@ -24,7 +24,7 @@
 #   6. Wait for ssh on the panel; light sanity check.
 #
 # USAGE
-#   onboard.sh --brainslug http://10.99.0.35 --staging-host aibox \
+#   onboard.sh --uart-probe http://10.99.0.35 --staging-host aibox \
 #              --poe-port 3 --artifacts /tmp/tc8-v0.3.0
 #
 # artifacts/ must contain:  Image  imx8mm-tc8.dtb  rootfs.img(.zst)
@@ -36,7 +36,7 @@
 
 set -euo pipefail
 
-BRAINSLUG="${BRAINSLUG:-http://10.99.0.35}"
+UART_PROBE="${UART_PROBE:-http://10.99.0.35}"
 # Historical name "fastboot host" preserved as an alias so old workflow envs
 # (TC8_FASTBOOT_HOST) keep working — staging-host is what it does now.
 STAGING_HOST="${STAGING_HOST:-${FASTBOOT_HOST:-aibox}}"
@@ -55,7 +55,7 @@ ETHADDR="${TC8_ETHADDR:-}"                 # XX:XX:XX:XX:XX:XX — falls back to
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --brainslug)      BRAINSLUG="$2"; shift 2;;
+        --uart-probe)     UART_PROBE="$2"; shift 2;;
         --staging-host)   STAGING_HOST="$2"; shift 2;;
         --fastboot-host)  STAGING_HOST="$2"; shift 2;;   # legacy alias
         --poe-port)       POE_PORT="$2"; shift 2;;
@@ -107,8 +107,8 @@ else
     echo "[!] no stage2-uboot.bin/bmp_blob.bin in $ARTIFACTS — plain direct-kernel install (no unlock FW)"
 fi
 
-ub()      { curl -fsS -X POST --data-binary "$1" -H "Content-Type: application/octet-stream" "$BRAINSLUG/uart/1/write" >/dev/null; }
-ub_read() { curl -fsS "$BRAINSLUG/uart/1/read"; }
+ub()      { curl -fsS -X POST --data-binary "$1" -H "Content-Type: application/octet-stream" "$UART_PROBE/uart/1/write" >/dev/null; }
+ub_read() { curl -fsS "$UART_PROBE/uart/1/read"; }
 ub_cmd()  { local cmd="$1"; local wait_s="${2:-1}"; ub_read >/dev/null; ub "${cmd}"$'\r'; sleep "$wait_s"; ub_read || true; }
 
 catch_uboot() {
@@ -136,7 +136,7 @@ catch_uboot() {
     SW_PASS="$SW_PASS" "$REPO_ROOT/smoke/poe_cycle.sh" cycle "$POE_PORT" >/dev/null
     # $PYTHON defaults to plain `python3` (normal hosts). Override e.g.
     # PYTHON="uv run python3" in sandboxed envs that proxy python.
-    ${PYTHON:-python3} "$REPO_ROOT/smoke/catch_uboot.py" --brainslug "$BRAINSLUG"
+    ${PYTHON:-python3} "$REPO_ROOT/smoke/catch_uboot.py" --uart-probe "$UART_PROBE"
 }
 
 install_env() {

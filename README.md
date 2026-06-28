@@ -112,7 +112,7 @@ care about). See [BUILDING.md](BUILDING.md) for credential overrides.
 
 - **[FLASHING.md](FLASHING.md)** — the `boota` slot-image model, browser provisioning (enroll → flashos), and the direct-write dev path + recovery
 - **[BUILDING.md](BUILDING.md)** — host setup (Ubuntu), build pipeline, iterate
-- **[QUICKSTART.md](QUICKSTART.md)** — manual dev-path recipe (UMS + dd flat layout, no brainslug needed)
+- **[QUICKSTART.md](QUICKSTART.md)** — manual dev-path recipe (UMS + dd flat layout, no UART probe needed)
 - **[NETBOOT.md](NETBOOT.md)** — dev path: TFTP+NFS server setup, u-boot commands for stateless boots
 
 ## Status

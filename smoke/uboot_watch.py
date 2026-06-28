@@ -2,17 +2,17 @@
 
 Runs standalone on the GitHub Actions self-hosted runner host (aibox) — the
 smoke-test workflow copies this file to /tmp/ and systemd-run's it. Talks
-to the TC8 via the brainslug HTTP UART; no local /dev node needed.
+to the TC8 via the network UART probe's HTTP API; no local /dev node needed.
 """
 import os, sys, time, datetime, json, urllib.request
 
-BRAINSLUG = os.environ.get('BRAINSLUG_HOST', '10.99.0.35')
-BRAINSLUG_PORT = int(os.environ.get('BRAINSLUG_PORT', '1'))
-BASE = f'http://{BRAINSLUG}/uart/{BRAINSLUG_PORT}'
+UART_PROBE = os.environ.get('UART_PROBE_HOST', '10.99.0.35')
+UART_PROBE_PORT = int(os.environ.get('UART_PROBE_PORT', '1'))
+BASE = f'http://{UART_PROBE}/uart/{UART_PROBE_PORT}'
 
 
 class _Ser:
-    """Minimal serial-like shim over the brainslug HTTP API."""
+    """Minimal serial-like shim over the UART probe's HTTP API."""
     def __init__(self):
         body = json.dumps({'baud': 115200, 'data': 8, 'parity': 0, 'stop': 1,
                            'tx_gpio': 17, 'rx_gpio': 16}).encode()

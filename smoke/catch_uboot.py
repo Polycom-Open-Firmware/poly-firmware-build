@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""catch_uboot.py — drive a TC8 panel into u-boot via the brainslug UART.
+"""catch_uboot.py — drive a TC8 panel into u-boot via the network UART probe.
 
 Uses /uart/1/ws (full-duplex WebSocket) so one TCP connection carries both
-the ^C spam (client → slug) and the panel UART output (slug → client). HTTP
+the ^C spam (client → probe) and the panel UART output (probe → client). HTTP
 POST per Ctrl-C used to cap us at ~67 bursts/s; over WS we're UART-baud
 limited (>1k bursts/s) and reliably catch u-boot inside the bootdelay window.
 
 Stdlib only — no `pip install websockets` needed on the runner.
 
 Usage:
-  catch_uboot.py --brainslug http://10.99.0.35
+  catch_uboot.py --uart-probe http://10.99.0.35
 """
 import argparse, base64, os, re, select, socket, struct, sys, time
 from urllib.parse import urlparse
@@ -122,15 +122,15 @@ def ws_recv_all_available(sock, leftover, max_bytes=65536):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--brainslug', required=True, help='http://host[:port]')
+    ap.add_argument('--uart-probe', required=True, help='http://host[:port]')
     ap.add_argument('--port', type=int, default=1)
     ap.add_argument('--total-timeout', type=float, default=90,
                     help='wallclock seconds before giving up')
     args = ap.parse_args()
 
     path = f"/uart/{args.port}/ws"
-    sock, leftover = ws_connect(args.brainslug, path)
-    print(f"[+] ws connected: {args.brainslug}{path}", flush=True)
+    sock, leftover = ws_connect(args.uart_probe, path)
+    print(f"[+] ws connected: {args.uart_probe}{path}", flush=True)
 
     burst = b'\x03 \r' * 8
     prompt_re = re.compile(rb'(u-boot=> |^=> )')
@@ -139,15 +139,15 @@ def main():
     start = time.monotonic()
     deadline = start + args.total_timeout
 
-    # Pace sends so we don't outrun the slug's httpd work queue. ~200/s is
+    # Pace sends so we don't outrun the probe's httpd work queue. ~200/s is
     # comfortably above the bootdelay polling rate but well under what fills
-    # the TCP recv buffer faster than the slug drains it. (At 24 B/burst this
+    # the TCP recv buffer faster than the probe drains it. (At 24 B/burst this
     # is also far below the 115200-baud UART ceiling.)
     send_interval = 1.0 / 50
     next_send = time.monotonic()
 
     while time.monotonic() < deadline:
-        # Drain RX first — keeps the slug's send side flowing and lets us
+        # Drain RX first — keeps the probe's send side flowing and lets us
         # detect the prompt the instant it arrives.
         readable, _, _ = select.select([sock], [], [], 0)
         if readable:
@@ -171,7 +171,7 @@ def main():
                 sends += 1
                 next_send = now + send_interval
             except BlockingIOError:
-                # Slug-side TCP recv buffer is momentarily full; back off briefly.
+                # Probe-side TCP recv buffer is momentarily full; back off briefly.
                 time.sleep(0.005)
             except OSError as e:
                 print(f"[!] send error: {e}", flush=True)

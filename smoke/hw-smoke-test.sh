@@ -8,7 +8,7 @@
 #   ./scripts/hw-smoke-test.sh --local               # smoke-test the local build in out/emmc/
 #
 # REQUIRED ENV (lab-specific; failing values prevent the script from running)
-#   BRAINSLUG          brainslug URL, e.g. http://10.99.0.35 (default in env or via --brainslug)
+#   UART_PROBE         UART probe URL, e.g. http://10.99.0.35 (default in env or via --uart-probe)
 #   POE_PORT           switch port number for the panel under test
 #   TC8_FASTBOOT_HOST  ssh user@host with USB to the panel (default: aibox)
 #   TC8_HOST_PASS      root password baked into the test image (default: root)
@@ -18,7 +18,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-: "${BRAINSLUG:=http://10.99.0.35}"
+: "${UART_PROBE:=http://10.99.0.35}"
 : "${POE_PORT:=}"
 : "${TC8_FASTBOOT_HOST:=aibox}"
 : "${TC8_HOST_PASS:=root}"
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
         --tag=*)         TAG="${1#--tag=}"; shift;;
         --tag)           TAG="$2"; shift 2;;
         --local)         MODE="local"; shift;;
-        --brainslug)     BRAINSLUG="$2"; shift 2;;
+        --uart-probe)    UART_PROBE="$2"; shift 2;;
         --poe-port)      POE_PORT="$2"; shift 2;;
         --keep)          KEEP=1; shift;;
         -h|--help)       sed -n '2,25p' "$0"; exit 0;;
@@ -79,12 +79,12 @@ ls -la "$ASSETS"
 # Step 2 — onboard the panel. This handles bootdelay=0 catch, GPT rewrite,
 # fastboot flash, u-boot env install, reset.
 echo "[+] running onboard.sh against the panel"
-BRAINSLUG="$BRAINSLUG" \
+UART_PROBE="$UART_PROBE" \
 FASTBOOT_HOST="$TC8_FASTBOOT_HOST" \
 SW_PASS="$SW_PASS" \
 TC8_HOST_PASS="$TC8_HOST_PASS" \
     "$REPO_ROOT/smoke/onboard.sh" \
-        --brainslug "$BRAINSLUG" \
+        --uart-probe "$UART_PROBE" \
         --fastboot-host "$TC8_FASTBOOT_HOST" \
         --poe-port "$POE_PORT" \
         --artifacts "$ASSETS"

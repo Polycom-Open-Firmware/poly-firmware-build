@@ -23,8 +23,9 @@ Android), see [`FLASHING.md`](FLASHING.md).
 - **A TC8 panel** powered by PoE (or a TC8-compatible PoE injector).
 - **A serial UART probe** between your laptop and the panel's debug header.
   Anything that exposes `/dev/ttyUSB*` at 115200 8N1 works — an FTDI cable,
-  a CP2102 board, a brainslug (this repo's preferred probe), even a Pi
-  GPIO-UART. Wire `slug-TX → panel-RX`, `slug-RX → panel-TX`, `GND → GND`.
+  a CP2102 board, a network-attached UART probe (this repo's preferred probe),
+  even a Pi GPIO-UART. Wire `probe-TX → panel-RX`, `probe-RX → panel-TX`,
+  `GND → GND`.
 - **A USB-A or USB-C cable** from your laptop to the panel's USB-C port —
   used briefly to expose the eMMC as a USB drive for partitioning.
 - **A Linux host** with these packages installed:
@@ -66,7 +67,7 @@ for ~10 seconds. You should land on the u-boot prompt:
 u-boot=>
 ```
 
-> If you're using a brainslug (network-attached probe), `smoke/catch_uboot.py`
+> If you're using a network-attached UART probe, `smoke/catch_uboot.py`
 > automates this — it's the same flow, just sending Ctrl-C bursts via a
 > WebSocket.
 
@@ -209,12 +210,12 @@ in any state is safe and brings it back to a known-good install.
 ## Going automated
 
 Everything in steps 1–5 is what `smoke/onboard.sh` does over the network
-through a brainslug probe. If you have one of those, the whole flow is one
+through a UART probe. If you have one of those, the whole flow is one
 command:
 
 ```sh
 SW_PASS=… TC8_HOST_PASS=root smoke/onboard.sh \
-    --brainslug http://<slug-ip> --staging-host <ssh-alias> \
+    --uart-probe http://<probe-ip> --staging-host <ssh-alias> \
     --poe-port <N> --artifacts /tmp/tc8
 ```
 

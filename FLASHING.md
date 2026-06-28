@@ -72,7 +72,7 @@ Everything below is the **bring-up / lab path**, distinct from the
 production `boota` provisioning above. Instead of the slot image it writes
 a **flat GPT** and has u-boot raw-read the kernel + DTB and `booti` them
 (no Android wrapper, no AVB). `smoke/onboard.sh` automates it over a
-brainslug + UMS; [QUICKSTART.md](QUICKSTART.md) is the same flow by hand.
+network UART probe + UMS; [QUICKSTART.md](QUICKSTART.md) is the same flow by hand.
 It still works and is handy for kernel/rootfs iteration, but a panel
 installed this way uses `root=/dev/mmcblk2p5` and the `slotbboot`/`booti`
 env — not `boota`.
@@ -124,17 +124,17 @@ Onboarding the flat-layout install is one command:
 
 ```bash
 smoke/onboard.sh \
-    --brainslug http://<brainslug-ip> \
+    --uart-probe http://<uart-probe-ip> \
     --staging-host <ssh-alias> \
     --poe-port <panel-poe-port> \
     --artifacts /tmp/tc8-v0.3.0
 ```
 
-> ⚠ **`--poe-port` and `--brainslug` are environment-specific.**
+> ⚠ **`--poe-port` and `--uart-probe` are environment-specific.**
 > `onboard.sh` PoE-cycles `--poe-port` and drives whatever panel is on
 > it. On a shared PoE switch a wrong port number will power-cycle (and,
 > with matching artifacts, could reflash) the wrong device. Confirm the
-> port your target panel is on, and that its brainslug IP is reachable,
+> port your target panel is on, and that its UART probe IP is reachable,
 > before running. (Do not copy a port/IP from an example — they are
 > placeholders.)
 
@@ -163,7 +163,7 @@ script can write to a block device.
 
 What it does:
 
-1. Spams Ctrl-C at the panel UART via the brainslug while the script
+1. Spams Ctrl-C at the panel UART via the network UART probe while the script
    PoE-cycles the panel. Catches u-boot even on stock units with
    `bootdelay=0` (no `Hit any key` window).
 2. Installs our u-boot env vars (`slotbboot`, `tc8_bootargs`, `bootcmd`,
@@ -234,7 +234,7 @@ If a slot's kernel is corrupt:
   reset` (or `main`). With `bootdelay=3` this is a 3-second window after
   power-on.
 - If both slots are wedged: re-run `onboard.sh` — it catches u-boot via the
-  brainslug regardless of state and re-flashes from scratch.
+  UART probe regardless of state and re-flashes from scratch.
 
 If u-boot itself is broken (very rare — we don't touch the bootloader
 region): NXP SDP recovery via `uuu` over USB. Out of scope here.
