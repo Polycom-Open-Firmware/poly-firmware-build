@@ -135,3 +135,25 @@ key). Don't put anything in here you wouldn't accept on the device's disk.
 - `rootfs/etc/systemd/system/tc8-config.service` — oneshot, `Before=kiosk-config.service kiosk.service`.
 - Enabled in `rootfs/chroot-setup.sh`. To add a `▢` key: extend the reader's
   `case`, flip it to ✅ here.
+
+## Bootloader update — rides the cache
+
+A new **stage-2 bootloader** is pushed the same way config is: staged in the
+`cache` partition by the wizard, applied by the running OS. **No serial.**
+
+| offset | contents |
+|-------:|----------|
+| 0 | config blob (above) |
+| **1 MiB** | bootloader header sector: magic `"TC8BOOT1"` \| `len` u32 \| `sha256(image)` (32) \| reserved |
+| **1 MiB + 512** | the stage-2 image (`tc8-stage2-uboot.bin`), sector-aligned, `len` bytes |
+
+On device, `tc8-update-bootloader.service` (`etc/tc8-config/update-bootloader.sh`):
+if a `TC8BOOT1` blob is staged and its sha256 differs from eMMC `boot1`, it flashes
+`boot1` (force_ro off → `dd` → read-back verify → force_ro on). It **refuses**
+anything failing sha256 or the `0a 00 00 14` stage-2 signature, is **idempotent**
+(skips when boot1 already matches), and takes effect on the **next reboot**.
+`boot0` (stock stage-1) is never touched → SDP/`uuu`-recoverable.
+
+**Wizard "Update Bootloader" step** (Unlock / Reinstall, or standalone): include
+the stage-2 in the cache image and `fastboot flash cache` it. Reference builder:
+`tools/mkconfigblob.py cache.img --bootloader tc8-stage2-uboot.bin KIOSK_URL=...`
