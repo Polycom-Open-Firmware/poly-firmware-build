@@ -9,19 +9,33 @@ page. One Ethernet cable supplies both power (PoE) and network, the
 installer runs in a web browser, and the whole stack — display, touch,
 audio, networking — runs on mainline Linux, verified on real hardware.
 
-**How it works** — the SoC's HAB fuses pin stock U-Boot's signature, so we
-never replace it. A one-time **enroll** lands our stage-2 U-Boot in the
-eMMC `boot1` hardware partition; stock stage-1 chainloads it, and — with
-the bootloader unlocked — stage-2 boots Debian as a slotable A/B
-Android image using NXP `boota`, carrying AVB metadata that is
-structurally valid but unsigned. [FLASHING.md](FLASHING.md) has the mechanics.
+**How it works** — the TC8 will only start bootloader code signed by
+Polycom; that check is burned into the chip and can't be changed. So we
+don't fight it: the factory bootloader runs first, exactly as shipped, and
+then hands off to our own bootloader, which lives in a spare region of the
+panel's built-in storage. From there, ours starts Debian the same way the
+panel used to start Android — to the hardware, nothing unusual is
+happening. The factory bootloader is never overwritten, so a bad flash
+can't permanently brick the panel. [FLASHING.md](FLASHING.md) has the full
+mechanics.
 
-**How it's installed** — the
-[browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
-(WebUSB: no host `fastboot` binary, no driver install). A fresh unit takes
-a one-time serial bootstrap to force fastboot; from then on it's the
-four-finger gesture and the browser. [QUICKSTART.md](QUICKSTART.md) walks
-through it.
+**How it's installed and managed** — with the
+[browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner),
+a point-and-click wizard that runs entirely in Chrome or Edge: nothing to
+install, no drivers, no command line. It talks to the panel over a USB
+cable and can:
+
+- **Unlock** a fresh panel — one-time, and the only step that needs a
+  serial cable ([QUICKSTART.md](QUICKSTART.md) walks through it)
+- **Install or reinstall** the OS, with the option of keeping stock
+  Android in the panel's spare boot slot
+- **Configure** panels without ever opening a shell — hostname, kiosk
+  page, passwords, time zone, certificates, and more
+  ([CONFIG-PARTITION.md](CONFIG-PARTITION.md))
+- **Update the bootloader** in the field, again with no serial cable
+
+After the one-time unlock, everything happens with a four-finger tap on
+the panel's screen and a browser tab.
 
 ## What you get on the panel
 
