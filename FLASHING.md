@@ -1,9 +1,9 @@
-# FLASHING.md
+# Flashing — boot model & provisioning
 
 How to take a Polycom TC8 panel from stock (or a previous rev of this
 sideload) onto the current build. Result: panel boots from eMMC into a
-fullscreen Wayland kiosk (cage + cog) — by default a touch-tester at
-`/etc/tc8-kiosk/touchtest.html`; point `KIOSK_URL` wherever you like.
+fullscreen Wayland kiosk (cage + cog) — see [USING.md](USING.md) for
+getting in and pointing `KIOSK_URL` at your own page.
 
 ## How the slot image boots
 
@@ -96,9 +96,8 @@ Post-install, both device config and stage-2 updates go through the
 **`cache` partition** — no serial, no bootloader command. The wizard does
 `fastboot flash cache <blob>` and the running OS applies the staged blob on
 the next boot: idempotent, sha256-verified, and `boot0` is never touched.
-See [CONFIG-PARTITION.md](CONFIG-PARTITION.md) for the cache-blob layout +
-config-key schema, and [BOOTLOADER-UPDATE.md](BOOTLOADER-UPDATE.md) for the
-stage-2-into-`boot1` update flow.
+See [CONFIG-PARTITION.md](CONFIG-PARTITION.md) for the cache-blob layout,
+the config-key schema, and the stage-2-into-`boot1` update flow.
 
 ## Recovery / unbrick
 
@@ -109,32 +108,5 @@ stage-2-into-`boot1` update flow.
 - **Stage-1 / total brick** (very rare — we never write `boot0`): NXP SDP
   recovery via `uuu` over USB. Out of scope here.
 
-## End-user access
-
-The image bakes:
-
-- **Composite USB gadget** on the data port — three interfaces:
-  - **CDC ACM** → `/dev/ttyACM0` (Linux) / "USB Serial Device" (Windows).
-    systemd-getty spawns a login prompt automatically.
-  - **CDC NCM** → `usb0` USB-Ethernet on the host. Panel runs DHCP on
-    `10.55.0.1/24` and leases the host `.2`–`.5`. ssh to `10.55.0.1` the
-    moment the link comes up.
-  - **MTP / Portable Device** — `/data` exposed via uMTP-Responder.
-    Drag-and-drop in any native file manager.
-- **ssh** on the wired LAN (port 22).
-
-Default credentials: **`root` / `root`**. Override at build time with
-`TC8_ROOT_PASSWORD=...` or `rootfs/root_password`; pubkey via
-`rootfs/authorized_keys` or `TC8_SSH_PUBKEY=...`. Change them before
-plugging the panel into anything you care about.
-
-## Configuring the kiosk URL
-
-The kiosk reads `/etc/default/tc8-kiosk`. Variables:
-
-```sh
-KIOSK_URL=https://your-page.example.com/
-COG_OPTS=--enable-media=true
-```
-
-After editing, `systemctl restart kiosk`.
+Once the panel is up, [USING.md](USING.md) covers access (USB gadget, ssh,
+credentials) and configuration.

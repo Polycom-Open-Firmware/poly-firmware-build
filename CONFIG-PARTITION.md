@@ -1,11 +1,12 @@
-# TC8 autoconfigure — the `cache`-partition config blob (v1)
+# TC8 cache partition — autoconfigure + bootloader updates (v1)
 
-How the provisioning wizard pushes device configuration to a TC8 **over
-fastboot**, with no bootloader change. The wizard writes a small blob to the
-stock **`cache`** GPT partition; a boot-time service applies it before the kiosk
-starts. This doc is the contract: the **Linux half is implemented** (in this
-repo); the **web/wizard half** (build + flash the blob) implements against the
-format below.
+How the provisioning wizard pushes **device configuration** and **stage-2
+bootloader updates** to a TC8 over fastboot — no serial, no bootloader
+change. The wizard writes a blob to the stock **`cache`** GPT partition;
+boot-time services apply it before the kiosk starts. This doc is the
+contract: the **Linux half is implemented** (in this repo); the
+**web/wizard half** (build + flash the blob) implements against the format
+below.
 
 ## Why `cache`
 - It's in the stock Android GPT — **1 GiB ext4** (was Android `/cache`), **unused**
@@ -16,38 +17,75 @@ format below.
 - Legacy flat-layout units have no `cache`; the reader no-ops there until they're
   re-flashed to the v0.4.x stock-GPT model.
 
-## Blob format
-Written to the **start** of the `cache` partition. All integers little-endian.
+## Cache image layout
+
+Written to the **start** of the `cache` partition. All integers
+little-endian. The config blob sits at offset 0; a staged bootloader
+(optional) at 1 MiB.
 
 | offset | size | field |
 |-------:|-----:|-------|
-| 0  | 8  | magic = ASCII `"TC8CFGv1"` |
-| 8  | 4  | `length` — payload byte length (u32 LE) |
-| 12 | 32 | `sha256(payload)` — raw 32 bytes |
-| 44 | 20 | reserved (zero) |
-| 64 | N  | payload |
+| 0  | 8  | config magic `"TC8CFGv1"` |
+| 8  | 4  | config payload length `Lc` (u32) |
+| 12 | 32 | sha256(config payload) |
+| 44 | 20 | reserved (0) |
+| 64 | `Lc` | config payload (`KEY=value\n…`) |
+| **1 MiB (0x100000)** | 8 | bootloader magic `"TC8BOOT1"` |
+| 1 MiB + 8 | 4 | stage-2 image length `Lb` (u32) |
+| 1 MiB + 12 | 32 | sha256(stage-2 image) |
+| 1 MiB + 44 | 20 | reserved (0) |
+| **1 MiB + 512 (0x100200)** | `Lb` | the stage-2 image (`tc8-stage2-uboot.bin`) |
 
-- **payload** — UTF-8 text, one `KEY=value` per line (LF). `#` and blank lines
-  ignored. `length` = payload byte count. Max **1 MiB**.
-- The device verifies **magic + sha256** before applying. A fresh/empty `cache`
-  (no magic) or a corrupt/half-written blob is **ignored** — the unit keeps its
-  current config. Applied **every boot** (idempotent); the blob is not cleared.
-- The blob can be tiny (header + payload); fastboot writes it to the partition
-  start, no need to write the whole 1 GiB.
+- **Config payload** — UTF-8 text, one `KEY=value` per line (LF). `#` and
+  blank lines ignored. Max **1 MiB**.
+- **Config-only push?** Omit everything from 1 MiB on (just the config
+  blob). The bootloader-updater no-ops when there's no `TC8BOOT1` magic.
+- The bootloader header lives in the **sector at 1 MiB**; the image starts
+  at the **next sector** (1 MiB + 512), sector-aligned.
+- The device verifies **magic + sha256** before applying either half. A
+  fresh/empty `cache` (no magic) or a corrupt/half-written blob is
+  **ignored** — the unit keeps its current config/bootloader. Applied
+  **every boot** (idempotent); the blob is not cleared.
+- Cache is **1 GiB**, so even with a ~3 MiB stage-2 the composite is tiny;
+  fastboot writes from offset 0, no need to write the whole partition.
 
-## Building the blob (web/wizard half)
-```js
-const enc = new TextEncoder();
-const payload = enc.encode(lines.join("\n") + "\n");          // "KEY=value\n..."
-const sha = new Uint8Array(await crypto.subtle.digest("SHA-256", payload));
-const head = new Uint8Array(64);
-head.set(enc.encode("TC8CFGv1"), 0);                          // magic
-new DataView(head.buffer).setUint32(8, payload.length, true); // length LE
-head.set(sha, 12);                                            // sha256
-const blob = new Uint8Array(head.length + payload.length);
-blob.set(head, 0); blob.set(payload, 64);
-// fastboot flash cache <blob>  ;  fastboot reboot
+## Building the cache image (wizard reference, TypeScript/JS)
+
+```ts
+// configLines: e.g. ["KIOSK_URL=https://dash.local", "DEVICE_NAME=lobby"]
+// stage2: Uint8Array of tc8-stage2-uboot.bin, or null for a config-only push.
+async function buildCacheImage(configLines: string[], stage2: Uint8Array | null): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+
+  // --- config blob @ 0 ---
+  const payload = enc.encode(configLines.join("\n") + "\n");
+  const cfgHdr = new Uint8Array(64);
+  cfgHdr.set(enc.encode("TC8CFGv1"), 0);
+  new DataView(cfgHdr.buffer).setUint32(8, payload.length, true);
+  cfgHdr.set(new Uint8Array(await crypto.subtle.digest("SHA-256", payload)), 12);
+
+  if (!stage2) {
+    const blob = new Uint8Array(64 + payload.length);
+    blob.set(cfgHdr, 0); blob.set(payload, 64);
+    return blob;                                   // config-only
+  }
+
+  // --- bootloader: header @ 1 MiB, image @ 1 MiB + 512 ---
+  const HDR_OFF = 1 << 20, IMG_OFF = HDR_OFF + 512;
+  const blHdr = new Uint8Array(64);
+  blHdr.set(enc.encode("TC8BOOT1"), 0);
+  new DataView(blHdr.buffer).setUint32(8, stage2.length, true);
+  blHdr.set(new Uint8Array(await crypto.subtle.digest("SHA-256", stage2)), 12);
+
+  const buf = new Uint8Array(IMG_OFF + stage2.length);
+  buf.set(cfgHdr, 0); buf.set(payload, 64);
+  buf.set(blHdr, HDR_OFF);
+  buf.set(stage2, IMG_OFF);
+  return buf;                                      // fastboot flash cache <buf>
+}
 ```
+
+CLI equivalent (for testing): `tools/mkconfigblob.py cache.img --bootloader tc8-stage2-uboot.bin KIOSK_URL=…`
 
 ## Config keys (the autoconfigure schema)
 Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-config.sh`);
@@ -121,7 +159,38 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
   local edit beats the last pushed config.
 - **Reconfigure** (already-unlocked unit): 4-finger → fastboot → wizard builds the
   blob from the form → `fastboot flash cache` → `fastboot reboot`.
-- **Unlock / Reinstall:** flash a **default** blob so a fresh unit boots configured.
+- **Unlock / Reinstall:** flash a **default** blob so a fresh unit boots
+  configured — and include the current stage-2 by default, so every install
+  lands the matching bootloader. That's one extra fetch + a bigger
+  `fastboot flash cache`, not a separate device round-trip.
+- **Update bootloader** (standalone): offer an in-field bootloader bump
+  without reinstalling the OS.
+
+## Bootloader update — how it lands
+
+- The stage-2 lives in the eMMC **boot1** hardware partition. A *running*
+  Debian can rewrite boot1 (we do); a fastboot session generally can't
+  target it cleanly. So the wizard hands the image to the OS via `cache`,
+  and the OS does the write. The wizard never writes `boot1` directly.
+- On device, `tc8-update-bootloader.service` runs
+  `etc/tc8-config/update-bootloader.sh` at boot: validate the `TC8BOOT1`
+  blob → sha256 + `0a 00 00 14` stage-2 signature → compare to boot1 →
+  flash (force_ro toggle + `dd` + read-back verify) only if different.
+- **Timing:** the wizard's job finishes at `fastboot flash cache` +
+  `fastboot reboot`. The unit comes up on the *old* stage-2, flashes boot1
+  in the background, and the *next* power-cycle runs the new one. To make
+  it current in one visible step, prompt one extra reboot; otherwise it
+  converges on its own, since the write is idempotent.
+- **Failure modes:** nothing the wizard does can brick the unit —
+  **boot0** (stock stage-1) is never touched, so SDP/`uuu` recovery always
+  works; the OS verifies sha256 before writing and reads back after. A
+  "bootloader will finish updating on the next restart" note is all the
+  UI needs.
+- **Artifact:** `tc8-stage2-uboot.bin`, from the firmware release. Its md5
+  is in `manifest.json` (`stage2.md5`); show/track that as the bootloader
+  version. The wizard already has this image for **enroll** (which writes
+  it to boot1 over serial on a virgin unit) — this is the same image,
+  delivered the no-serial way.
 
 ## Security
 The blob is **plaintext at rest** on `cache` (any root user on the device can read
@@ -131,29 +200,9 @@ secrets protected at rest, that's a v2 item (encrypt the payload to a device/fle
 key). Don't put anything in here you wouldn't accept on the device's disk.
 
 ## Linux side (implemented here)
-- `rootfs/etc/tc8-config/apply-config.sh` — POSIX-sh reader (busybox/coreutils only).
+- `rootfs/etc/tc8-config/apply-config.sh` — config reader (POSIX sh, busybox/coreutils only).
+- `rootfs/etc/tc8-config/update-bootloader.sh` — bootloader reader/flasher.
 - `rootfs/etc/systemd/system/tc8-config.service` — oneshot, `Before=kiosk-config.service kiosk.service`.
+- `rootfs/etc/systemd/system/tc8-update-bootloader.service` — runs the flasher at boot.
 - Enabled in `rootfs/chroot-setup.sh`. To add a `▢` key: extend the reader's
   `case`, flip it to ✅ here.
-
-## Bootloader update — rides the cache
-
-A new **stage-2 bootloader** is pushed the same way config is: staged in the
-`cache` partition by the wizard, applied by the running OS. **No serial.**
-
-| offset | contents |
-|-------:|----------|
-| 0 | config blob (above) |
-| **1 MiB** | bootloader header sector: magic `"TC8BOOT1"` \| `len` u32 \| `sha256(image)` (32) \| reserved |
-| **1 MiB + 512** | the stage-2 image (`tc8-stage2-uboot.bin`), sector-aligned, `len` bytes |
-
-On device, `tc8-update-bootloader.service` (`etc/tc8-config/update-bootloader.sh`):
-if a `TC8BOOT1` blob is staged and its sha256 differs from eMMC `boot1`, it flashes
-`boot1` (force_ro off → `dd` → read-back verify → force_ro on). It **refuses**
-anything failing sha256 or the `0a 00 00 14` stage-2 signature, is **idempotent**
-(skips when boot1 already matches), and takes effect on the **next reboot**.
-`boot0` (stock stage-1) is never touched → SDP/`uuu`-recoverable.
-
-**Wizard "Update Bootloader" step** (Unlock / Reinstall, or standalone): include
-the stage-2 in the cache image and `fastboot flash cache` it. Reference builder:
-`tools/mkconfigblob.py cache.img --bootloader tc8-stage2-uboot.bin KIOSK_URL=...`

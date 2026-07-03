@@ -1,4 +1,4 @@
-# NETBOOT.md
+# Netboot — TFTP kernel + NFS rootfs
 
 How to netboot the TC8 panel: u-boot pulls a kernel + dtb over **TFTP**, kernel mounts its rootfs over **NFSv3**. Result: same fullscreen Wayland kiosk (cage + cog) as the eMMC target, but nothing is written to the device's flash.
 

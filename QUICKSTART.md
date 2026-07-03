@@ -8,6 +8,9 @@ do the rest (enroll + flashos). You only need this once per unit — an
 already-enrolled panel drops into fastboot with the 4-finger gesture at the
 boot selector, no serial.
 
+No build is required — the provisioner ships the release artifacts. You
+bring the panel, a UART probe, and a USB cable.
+
 For the boot-path rationale (unsigned AVB, stage-2 in `boot1`, the `boota`
 slot image), see [`FLASHING.md`](FLASHING.md).
 

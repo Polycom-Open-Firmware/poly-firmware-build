@@ -1,4 +1,4 @@
-# BUILDING.md
+# Building the image
 
 Build the sideloaded Linux image for a Polycom TC8 panel from a fresh
 checkout. Two profiles share the same kernel + rootfs:
@@ -8,14 +8,11 @@ checkout. Two profiles share the same kernel + rootfs:
   the browser provisioner
 - `nfs` — netboot bring-up, kernel TFTP'd, rootfs over NFS
 
-We **do** emit AVB metadata, but **unsigned** (`tools/avbtool ...
---algorithm NONE`). We don't have Polycom's signing key, but the slot image
-is booted by `boota` with the bootloader **unlocked** — `boota` requires
-AVB metadata to *exist* (rejects an image with none as `INVALID_METADATA`)
-yet forgives the missing signature once unlocked. So `build.sh` produces
-both the Android slot image (`boot.img`/`dtbo.img`/`vbmeta.img` +
-`rootfs.simg`) and the raw `Image` / `imx8mm-tc8.dtb` / `rootfs.img` used by
-the dev/netboot paths. See [FLASHING.md](FLASHING.md) for the whole story.
+`build.sh` produces both the Android slot image (`boot.img`/`dtbo.img`/
+`vbmeta.img` + `rootfs.simg`) and the raw `Image` / `imx8mm-tc8.dtb` /
+`rootfs.img` used by netboot. The slot image carries **unsigned** AVB
+metadata (`tools/avbtool ... --algorithm NONE`) and boots because the unit
+is unlocked — [FLASHING.md](FLASHING.md) has the whole story.
 
 ## 1. Install prerequisites
 
@@ -85,8 +82,8 @@ out/emmc/boot.img               # Android boot.img v0 + AVB hash footer (NONE) -
 out/emmc/dtbo.img               # DTB in Android DTBO container + AVB footer    -> fastboot flash dtbo_a
 out/emmc/vbmeta.img             # AVB vbmeta, hash descriptors boot+dtbo (NONE) -> fastboot flash vbmeta_a
 out/emmc/rootfs.simg            # Android sparse rootfs                         -> fastboot flash userdata
-out/emmc/Image                  # raw kernel (dev path / netboot)
-out/emmc/imx8mm-tc8.dtb         # raw device tree (dev path / netboot)
+out/emmc/Image                  # raw kernel (netboot)
+out/emmc/imx8mm-tc8.dtb         # raw device tree (netboot)
 out/emmc/rootfs.img             # 13 GiB ext4 (sparse on disk; ~2 GiB used)
 out/emmc/version.env            # TC8_FW_VERSION, build host, etc.
 out/emmc/SHA256SUMS
@@ -113,6 +110,24 @@ sparse `rootfs.simg` → `userdata`, `set_active`, and reboots via `boota`.
 ```
 
 Tweaking `kernel/tc8.config` doesn't trigger a rootfs rebuild.
+
+## Repo layout
+
+```
+build.sh                 top-level pipeline: kernel + slot images + rootfs + SHA256SUMS
+bootstrap.sh             one-shot: fetches vanilla linux-6.6
+tools/                   mkbootimg.py, mkdtboimg.py, mksparse.py, avbtool (slot-image + AVB)
+profiles/                emmc.env, nfs.env — per-target kernel cmdline
+kernel/                  kernel/build.sh + tc8.config (config fragment)
+kernel-patches/          submodule: tc8 patch series for vanilla 6.6
+rootfs/                  submodule: Debian rootfs builder + chroot-setup
+images/                  rootfs.sh (plain ext4)
+smoke/                   catch_uboot.py, uboot_watch.py, poe_cycle.sh, orient.html (serial-bootstrap / bring-up helpers)
+.github/workflows/       release.yml
+```
+
+`kernel-patches` and `rootfs` are sibling repos under the same org; pull
+with `--recurse-submodules`.
 
 ## Image-size guard
 
