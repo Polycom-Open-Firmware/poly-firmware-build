@@ -39,7 +39,7 @@ cmdline's `root=PARTLABEL=userdata`.
 ## Provisioning a panel (browser tool)
 
 The production install path is the
-[**browser provisioner**](https://github.com/Polycom-Open-Firmware/provisioner)
+[**browser provisioner**](https://wizard.openpolycom.cc/)
 (a separate WebUSB tool that runs in Chrome or Edge — no host
 `fastboot` binary and no driver install). It talks the fastboot protocol
 directly to the stage-2 U-Boot gadget.

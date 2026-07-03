@@ -20,7 +20,7 @@ can't permanently brick the panel. [FLASHING.md](FLASHING.md) has the full
 mechanics.
 
 **How it's installed and managed** — with the
-[browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner),
+[browser provisioner](https://wizard.openpolycom.cc/),
 a point-and-click wizard that runs entirely in Chrome or Edge: nothing to
 install, no drivers, no command line. It talks to the panel over a USB
 cable and can:
@@ -35,7 +35,8 @@ cable and can:
 - **Update the bootloader** in the field, again with no serial cable
 
 After the one-time unlock, everything happens with a four-finger tap on
-the panel's screen and a browser tab.
+the panel's screen and a browser tab. The wizard itself is open source:
+[Polycom-Open-Firmware/provisioner](https://github.com/Polycom-Open-Firmware/provisioner).
 
 ## What you get on the panel
 

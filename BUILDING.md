@@ -93,7 +93,7 @@ out/emmc/kernel/Image           # intermediate (= out/emmc/Image)
 ## 5. Install
 
 See [FLASHING.md](FLASHING.md). The production path is the
-[**browser provisioner**](https://github.com/Polycom-Open-Firmware/provisioner): get the unit into the stage-2
+[**browser provisioner**](https://wizard.openpolycom.cc/): get the unit into the stage-2
 fastboot gadget (one-time serial bootstrap on a fresh unit, or the four-finger
 gesture once enrolled), then `flashos` writes `boot_a`/`dtbo_a`/`vbmeta_a` +
 sparse `rootfs.simg` → `userdata`, `set_active`, and reboots with `boota`.

@@ -3,7 +3,7 @@
 A fresh TC8 has only stock signed U-Boot, which won't auto-enter fastboot.
 This is the **one-time serial bootstrap**: catch stock U-Boot over the UART,
 force it into fastboot, then let the
-[browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
+[browser provisioner](https://wizard.openpolycom.cc/)
 do the rest (enroll + flashos). You only need this once per unit — an
 already-enrolled panel drops into fastboot with the four-finger gesture at the
 boot selector, no serial.
@@ -62,7 +62,7 @@ but everything else happens in the browser.
 ## Step 3 — Provision from the browser
 
 Open the
-[browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
+[browser provisioner](https://wizard.openpolycom.cc/)
 in Chrome or Edge and:
 
 1. **Connect device…** — pick the TC8 in the chooser.
