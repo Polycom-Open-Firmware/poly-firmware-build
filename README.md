@@ -1,5 +1,7 @@
 # tc8-firmware-build
 
+![A repurposed Polycom TC8 panel running a Home Assistant dashboard as a fullscreen kiosk](docs/tc8-kiosk-dashboard.jpeg)
+
 The **Polycom TC8** is the little 8-inch touch panel that ships with Poly
 video-conferencing systems — and when those rooms get decommissioned, the
 panels usually end up as e-waste. This project gives them a second life as
