@@ -9,15 +9,15 @@ install path are all verified end-to-end on hardware.
 **How it works** — the SoC's HAB fuses pin stock U-Boot's signature, so we
 never replace it. A one-time **enroll** lands our stage-2 U-Boot in the
 eMMC `boot1` hardware partition; stock stage-1 chainloads it, and — with
-the bootloader **unlocked** — stage-2 boots Debian as a slotable **A/B
-Android image** via NXP `boota`, carrying structurally-valid but
-**unsigned** AVB metadata. [FLASHING.md](FLASHING.md) has the mechanics.
+the bootloader unlocked — stage-2 boots Debian as a slotable A/B
+Android image using NXP `boota`, carrying AVB metadata that is
+structurally valid but unsigned. [FLASHING.md](FLASHING.md) has the mechanics.
 
 **How it's installed** — the
 [browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
 (WebUSB: no host `fastboot` binary, no driver install). A fresh unit takes
 a one-time serial bootstrap to force fastboot; from then on it's the
-4-finger gesture and the browser. [QUICKSTART.md](QUICKSTART.md) walks
+four-finger gesture and the browser. [QUICKSTART.md](QUICKSTART.md) walks
 through it.
 
 ## What you get on the panel
@@ -52,16 +52,16 @@ flags.
 
 ## Documentation
 
-**Install & use**
+**Install and use**
 
 - **[QUICKSTART.md](QUICKSTART.md)** — fresh unit → running kiosk: serial bootstrap, then the browser provisioner
 - **[FLASHING.md](FLASHING.md)** — the `boota` slot-image model, browser provisioning (enroll → flashos), the on-eMMC layout (A/B slots + stage-2 in `boot1`), recovery
 - **[USING.md](USING.md)** — getting into an installed panel, kiosk URL, fleet config
 
-**Build & develop**
+**Build and develop**
 
 - **[BUILDING.md](BUILDING.md)** — host setup (Ubuntu), build pipeline, repo layout, image-size guard
-- **[NETBOOT.md](NETBOOT.md)** — TFTP+NFS dev/iteration path, nothing written to flash
+- **[NETBOOT.md](NETBOOT.md)** — TFTP and NFS development path; nothing is written to flash
 
 **Provisioner contracts**
 

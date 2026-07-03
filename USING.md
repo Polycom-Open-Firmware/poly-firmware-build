@@ -7,12 +7,12 @@ Getting into an installed panel and changing its configuration.
 The image bakes several ways in:
 
 - **Composite USB gadget** on the micro-B data port — three interfaces:
-  - **CDC ACM** → `/dev/ttyACM0` (Linux) / "USB Serial Device" (Windows).
+  - **CDC ACM** → `/dev/ttyACM0` on Linux, "USB Serial Device" on Windows.
     systemd-getty spawns a login prompt automatically.
   - **CDC NCM** → `usb0` USB-Ethernet on the host. Panel runs DHCP on
     `10.55.0.1/24` and leases the host `.2`–`.5`. ssh to `10.55.0.1` the
     moment the link comes up.
-  - **MTP / Portable Device** — `/data` exposed via uMTP-Responder.
+  - **MTP / Portable Device** — `/data` exposed by uMTP-Responder.
     Drag-and-drop in any native file manager.
 - **ssh** on the wired LAN (port 22).
 

@@ -94,12 +94,12 @@ out/emmc/kernel/Image           # intermediate (= out/emmc/Image)
 
 See [FLASHING.md](FLASHING.md). The production path is the
 [**browser provisioner**](https://github.com/Polycom-Open-Firmware/provisioner): get the unit into the stage-2
-fastboot gadget (one-time serial bootstrap on a fresh unit, or the 4-finger
+fastboot gadget (one-time serial bootstrap on a fresh unit, or the four-finger
 gesture once enrolled), then `flashos` writes `boot_a`/`dtbo_a`/`vbmeta_a` +
-sparse `rootfs.simg` → `userdata`, `set_active`, and reboots via `boota`.
+sparse `rootfs.simg` → `userdata`, `set_active`, and reboots with `boota`.
 
 [QUICKSTART.md](QUICKSTART.md) is the step-by-step fresh-unit serial bootstrap;
-[NETBOOT.md](NETBOOT.md) covers the TFTP+NFS dev/iteration path.
+[NETBOOT.md](NETBOOT.md) covers the TFTP and NFS development path.
 
 ## 6. Iterate
 
@@ -204,7 +204,7 @@ unprivileged LXC. Harmless; output artifacts are unaffected.
 
 ### `sudo` won't show progress in some pct-exec setups
 
-If you run the build via `pct exec`, redirect the build to a logfile
+If you run the build with `pct exec`, redirect the build to a logfile
 and `tail -f` it:
 
 ```bash

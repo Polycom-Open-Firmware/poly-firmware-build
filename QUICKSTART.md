@@ -5,7 +5,7 @@ This is the **one-time serial bootstrap**: catch stock U-Boot over the UART,
 force it into fastboot, then let the
 [browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
 do the rest (enroll + flashos). You only need this once per unit — an
-already-enrolled panel drops into fastboot with the 4-finger gesture at the
+already-enrolled panel drops into fastboot with the four-finger gesture at the
 boot selector, no serial.
 
 No build is required — the provisioner ships the release artifacts. You
@@ -23,7 +23,7 @@ slot image), see [`FLASHING.md`](FLASHING.md).
   `probe-RX → panel-TX`, `GND → GND`. Used only to catch U-Boot this once.
 - **A USB cable** from your laptop to the panel's **micro-B data port** —
   the fastboot gadget (and the provisioner's WebUSB) ride this port.
-- **Chrome or Edge** on the laptop (WebUSB — Firefox/Safari won't work).
+- **Chrome or Edge** on the laptop (WebUSB — Firefox and Safari won't work).
 
 ## Step 1 — Catch U-Boot
 
@@ -63,7 +63,7 @@ but everything else happens in the browser.
 
 Open the
 [browser provisioner](https://github.com/Polycom-Open-Firmware/provisioner)
-in Chrome/Edge and:
+in Chrome or Edge and:
 
 1. **Connect device…** — pick the TC8 in the chooser.
 2. **Enroll** (one-time) — lands our stage-2 U-Boot in the eMMC `boot1`
@@ -72,7 +72,7 @@ in Chrome/Edge and:
    needed.
 3. **Flashos** — `fastboot flash`es `boot_a`/`dtbo_a`/`vbmeta_a`,
    sparse-flashes `rootfs.simg` → `userdata`, `set_active a`, and reboots into
-   Debian via `boota`.
+   Debian with `boota`.
 
 The provisioner pulls the artifacts (`boot.img`, `dtbo.img`, `vbmeta.img`,
 `rootfs.simg`) from its own manifest — you don't stage anything by hand.
@@ -88,7 +88,7 @@ on serial you'll see `tc8-kiosk login:`. Default login is `root` / `root`
 Set a real password and (optionally) drop your SSH pubkey:
 
 ```sh
-ssh root@<panel-ip>     # find IP via your DHCP server or `ip neigh`
+ssh root@<panel-ip>     # find the IP from your DHCP server or `ip neigh`
 passwd                  # change the root password
 mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys   # paste your pubkey, Ctrl-D
 ```
@@ -98,7 +98,8 @@ to display and `systemctl restart kiosk`.
 
 ## Re-provisioning later
 
-You never need the serial cable again. Enter fastboot with the **4-finger
+You never need the serial cable again. Enter fastboot with the **four-finger
 gesture** at the boot selector, then re-run **flashos** (or the config /
 bootloader-update flows) from the browser. See [`FLASHING.md`](FLASHING.md)
-for the slot model and the cache-partition config/bootloader updates.
+for the slot model, plus config and bootloader updates over the cache
+partition.

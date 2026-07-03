@@ -1,11 +1,11 @@
 # Netboot — TFTP kernel + NFS rootfs
 
-How to netboot the TC8 panel: u-boot pulls a kernel + dtb over **TFTP**, kernel mounts its rootfs over **NFSv3**. Result: same fullscreen Wayland kiosk (cage + cog) as the eMMC target, but nothing is written to the device's flash.
+How to netboot the TC8 panel: u-boot pulls a kernel and DTB over TFTP, and the kernel mounts its rootfs over NFSv3. Result: the same fullscreen Wayland kiosk (cage + cog) as the eMMC target, but nothing is written to the device's flash.
 
-> **This is a dev / iteration path**, not the production install. The
-> shipped panel boots the slotable Android image via `boota` (see
-> [FLASHING.md](FLASHING.md)); netboot is for kernel/rootfs bring-up and for
-> keeping fleets of panels stateless.
+> This is a development path, not the production install. The shipped
+> panel boots the slotable Android image with `boota` (see
+> [FLASHING.md](FLASHING.md)); netboot is for kernel and rootfs bring-up,
+> and for keeping fleets of panels stateless.
 
 The examples below use the placeholder `<server-ip>` for your TFTP+NFS server. Substitute your own. The panel and the server must be on the same routable network.
 

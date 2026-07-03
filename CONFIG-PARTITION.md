@@ -1,19 +1,19 @@
 # TC8 cache partition — autoconfigure + bootloader updates (v1)
 
-How the provisioning wizard pushes **device configuration** and **stage-2
-bootloader updates** to a TC8 over fastboot — no serial, no bootloader
-change. The wizard writes a blob to the stock **`cache`** GPT partition;
+How the provisioning wizard pushes device configuration and stage-2
+bootloader updates to a TC8 over fastboot — no serial, no bootloader
+change. The wizard writes a blob to the stock `cache` GPT partition;
 boot-time services apply it before the kiosk starts. This doc is the
-contract: the **Linux half is implemented** (in this repo); the
-**web/wizard half** (build + flash the blob) implements against the format
-below.
+contract: the Linux half is implemented in this repo, and the wizard half
+(build + flash the blob) implements against the format below.
 
 ## Why `cache`
-- It's in the stock Android GPT — **1 GiB ext4** (was Android `/cache`), **unused**
+- It's in the stock Android GPT — 1 GiB ext4 (was Android `/cache`), unused
   by our Debian. (Confirmed on a live v0.4.x unit: `/dev/mmcblk2p7`, clean, 95% free.)
-- `fastboot flash cache <blob>` works with the **existing stage-2 fastboot** — no
+- `fastboot flash cache <blob>` works with the existing stage-2 fastboot — no
   bootloader rebuild, no re-enroll.
-- `cache` is **not** in the AVB-verified chain (`boot`/`dtbo`/`vbmeta`) → **no re-sign**.
+- `cache` is not in the AVB-verified chain (`boot`/`dtbo`/`vbmeta`), so nothing
+  needs re-signing.
 - Legacy flat-layout units have no `cache`; the reader no-ops there until they're
   re-flashed to the v0.4.x stock-GPT model.
 
@@ -42,11 +42,11 @@ little-endian. The config blob sits at offset 0; a staged bootloader
   blob). The bootloader-updater no-ops when there's no `TC8BOOT1` magic.
 - The bootloader header lives in the **sector at 1 MiB**; the image starts
   at the **next sector** (1 MiB + 512), sector-aligned.
-- The device verifies **magic + sha256** before applying either half. A
-  fresh/empty `cache` (no magic) or a corrupt/half-written blob is
-  **ignored** — the unit keeps its current config/bootloader. Applied
-  **every boot** (idempotent); the blob is not cleared.
-- Cache is **1 GiB**, so even with a ~3 MiB stage-2 the composite is tiny;
+- The device verifies magic + sha256 before applying either half. A
+  fresh or empty `cache` (no magic) or a corrupt, half-written blob is
+  ignored — the unit keeps its current config and bootloader. Applied
+  every boot (idempotent); the blob is not cleared.
+- Cache is 1 GiB, so even with a ~3 MiB stage-2 the composite is tiny;
   fastboot writes from offset 0, no need to write the whole partition.
 
 ## Building the cache image (wizard reference, TypeScript/JS)
@@ -126,7 +126,7 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
 | `SSH_AUTHKEY` | ✅ | append to `/root/.ssh/authorized_keys` (fleet admin access) | `ssh-ed25519 AAAA…` |
 | `SSH_ENABLE` | ▢ | enable/disable sshd | `true` |
 | `SSH_PASSWORD_AUTH` | ▢ | allow/deny password login (harden) | `false` |
-| `STREAM_USER` / `STREAM_PASS` | ▢ | creds for the kiosk destination if not embedded in the URL (e.g. RTSP camera) | `admin` / `…` |
+| `STREAM_USER` / `STREAM_PASS` | ▢ | credentials for the kiosk destination if not embedded in the URL (for example, an RTSP camera) | `admin` / `…` |
 
 ### Certificates / trust
 | key | st | effect | example |
@@ -149,17 +149,18 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
 | `OTA_CHANNEL` / `OTA_URL` | ▢ | update channel + server | `stable` |
 | `REBOOT_SCHEDULE` | ▢ | nightly reboot (kiosk hygiene), cron/timer | `04:00` |
 
-> Multi-line / binary values (certs, keys) travel **base64-encoded** in the
-> `*_B64` keys — keeps the payload single-line `KEY=value`. Unknown keys are
-> logged and ignored, so the wizard can send a superset safely.
+> Multi-line or binary values (certs, keys) travel base64-encoded in the
+> `*_B64` keys — this keeps the payload single-line `KEY=value`. Unknown keys
+> are logged and ignored, so the wizard can send a superset safely.
 
-## Precedence & flows
-- **Precedence:** the `cache` blob is the **base**; a local `/data/poly-kiosk/config`
-  file (existing `kiosk-config.service`) still **overrides** it. So a hands-on
+## Precedence and flows
+- **Precedence:** the `cache` blob is the base; a local `/data/poly-kiosk/config`
+  file (existing `kiosk-config.service`) still overrides it. So a hands-on
   local edit beats the last pushed config.
-- **Reconfigure** (already-unlocked unit): 4-finger → fastboot → wizard builds the
-  blob from the form → `fastboot flash cache` → `fastboot reboot`.
-- **Unlock / Reinstall:** flash a **default** blob so a fresh unit boots
+- **Reconfigure** (already-unlocked unit): four-finger gesture → fastboot →
+  wizard builds the blob from the form → `fastboot flash cache` →
+  `fastboot reboot`.
+- **Unlock or reinstall:** flash a default blob so a fresh unit boots
   configured — and include the current stage-2 by default, so every install
   lands the matching bootloader. That's one extra fetch + a bigger
   `fastboot flash cache`, not a separate device round-trip.
@@ -168,9 +169,9 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
 
 ## Bootloader update — how it lands
 
-- The stage-2 lives in the eMMC **boot1** hardware partition. A *running*
+- The stage-2 lives in the eMMC `boot1` hardware partition. A *running*
   Debian can rewrite boot1 (we do); a fastboot session generally can't
-  target it cleanly. So the wizard hands the image to the OS via `cache`,
+  target it cleanly. So the wizard hands the image to the OS through `cache`,
   and the OS does the write. The wizard never writes `boot1` directly.
 - On device, `tc8-update-bootloader.service` runs
   `etc/tc8-config/update-bootloader.sh` at boot: validate the `TC8BOOT1`
@@ -182,7 +183,7 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
   it current in one visible step, prompt one extra reboot; otherwise it
   converges on its own, since the write is idempotent.
 - **Failure modes:** nothing the wizard does can brick the unit —
-  **boot0** (stock stage-1) is never touched, so SDP/`uuu` recovery always
+  `boot0` (stock stage-1) is never touched, so SDP and `uuu` recovery always
   works; the OS verifies sha256 before writing and reads back after. A
   "bootloader will finish updating on the next restart" note is all the
   UI needs.
@@ -195,7 +196,7 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
 ## Security
 The blob is **plaintext at rest** on `cache` (any root user on the device can read
 it — passwords, keys). That's usually acceptable for a trusted-fleet config, and
-it travels over **local USB/fastboot**, not the network. If a deployment needs
+it travels over local USB fastboot, not the network. If a deployment needs
 secrets protected at rest, that's a v2 item (encrypt the payload to a device/fleet
 key). Don't put anything in here you wouldn't accept on the device's disk.
 
