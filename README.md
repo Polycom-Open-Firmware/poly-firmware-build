@@ -1,10 +1,13 @@
 # tc8-firmware-build
 
-Sideload mainline Linux + a Debian kiosk onto the **Polycom TC8**
-video-conferencing touch panel (i.MX 8M Mini, codename LCC). Build a
-reproducible image, push it to a panel, repurpose the hardware. Display,
-touch, audio, network, USB gadget, netboot, and the browser-provisioner
-install path are all verified end-to-end on hardware.
+The **Polycom TC8** is the little 8-inch touch panel that ships with Poly
+video-conferencing systems — and when those rooms get decommissioned, the
+panels usually end up as e-waste. This project gives them a second life as
+a small Debian Linux machine that boots straight into a fullscreen web
+kiosk: point it at a dashboard, a calendar, a camera feed, or any other
+page. One Ethernet cable supplies both power (PoE) and network, the
+installer runs in a web browser, and the whole stack — display, touch,
+audio, networking — runs on mainline Linux, verified on real hardware.
 
 **How it works** — the SoC's HAB fuses pin stock U-Boot's signature, so we
 never replace it. A one-time **enroll** lands our stage-2 U-Boot in the
