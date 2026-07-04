@@ -21,8 +21,7 @@ drivers, no command line:
 - **Install the OS** — pick a release, click flash. Keep stock Android in
   the spare slot if you want a way back.
 - **Configure** — set the kiosk page, hostname, passwords, time zone, and
-  certificates from a form; no shell needed
-  ([CONFIG-PARTITION.md](CONFIG-PARTITION.md)).
+  certificates from a form; no shell needed.
 - **Update the bootloader** — same wizard, no serial adapter.
 
 Once unlocked, getting back into the wizard is just a four-finger tap on
