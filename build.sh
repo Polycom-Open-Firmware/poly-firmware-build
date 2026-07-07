@@ -223,6 +223,15 @@ if (( rootfs_sz > USERDATA_PARTITION_SIZE )); then
   exit 1
 fi
 
+# Rootfs delivery format is per-target (boot model): boota/TC8 flashes an
+# Android sparse image over fastboot; booti/C60 streams a zstd-compressed
+# ext4 image into system_a. Both start from the same raw rootfs.img above.
+if [[ "$BOOT_MODEL" == booti ]]; then
+  echo "===> [2.1/3] rootfs.img.zst (zstd, streamed into $ROOTFS_PARTITION)"
+  zstd -19 -f -T0 -q "$OUT/rootfs.img" -o "$OUT/rootfs.img.zst"
+  echo "       $(stat -c%s "$OUT/rootfs.img.zst") B compressed (from $rootfs_sz B)"
+  ROOTFS_SUM_FILE="rootfs.img.zst"
+else
 # Android sparse copy of rootfs.img for WebUSB fastboot provisioning. rootfs.img
 # is sized for the whole `userdata` partition (multi-GiB) but mostly zero blocks;
 # sparse encodes the zero runs as DONT_CARE chunks (no payload), so rootfs.simg
@@ -231,6 +240,7 @@ fi
 # the raw multi-GiB image. Round-tripped below in the verify step.
 echo "===> [2.1/3] rootfs.simg (Android sparse, fastboot flash userdata)"
 python3 "$REPO_ROOT/tools/mksparse.py" "$OUT/rootfs.img" "$OUT/rootfs.simg"
+ROOTFS_SUM_FILE="rootfs.simg"
 
 # Verify the sparse image: prefer a real simg2img round-trip (byte-identical to
 # the raw), else (no AOSP tools) assert the header fields + that the chunks'
@@ -257,6 +267,7 @@ else
   python3 "$REPO_ROOT/tools/mksparse.py" --verify "$OUT/rootfs.simg" "$OUT/rootfs.img" \
     || { echo "ERROR: rootfs.simg verify failed" >&2; exit 1; }
 fi
+fi   # end per-target rootfs delivery format
 
 # Lift Image + DTB up to the top of out/<profile>/ so release assembly
 # doesn't have to peek into out/<profile>/kernel/.
@@ -270,7 +281,7 @@ cp "$DTB"  "$OUT/$DTB_NAME"
 # of the rootfs we just built (package-list.txt ships busybox-static), so no
 # new host deps. --no-ramdisk reverts to the empty-ramdisk (direct rw) model.
 RAMDISK_ARGS=()
-if [[ $NO_RAMDISK -ne 1 ]]; then
+if [[ $NO_RAMDISK -ne 1 && "$BOOT_MODEL" == boota ]]; then
   echo "===> [2.4/3] boot ramdisk (busybox initramfs — ro-root/overlay selector)"
   BUSYBOX="$OUT/.busybox"
   if [[ -d "$ROOTFS" ]]; then
@@ -351,14 +362,14 @@ TC8_PATCHES_VERSION=$TC8_PATCHES_VERSION
 TC8_BUILD_DATE=$TC8_BUILD_DATE
 TC8_BUILD_HOST=$TC8_BUILD_HOST
 EOF
-sum_files=( Image "$DTB_NAME" "${BOOT_SUM_FILES[@]}" rootfs.img rootfs.simg version.env "${EXTRA_SUM_FILES[@]}" )
-[[ $NO_RAMDISK -ne 1 ]] && sum_files+=( initramfs.cpio.gz )
+sum_files=( Image "$DTB_NAME" "${BOOT_SUM_FILES[@]}" rootfs.img "$ROOTFS_SUM_FILE" version.env "${EXTRA_SUM_FILES[@]}" )
+[[ $NO_RAMDISK -ne 1 && "$BOOT_MODEL" == boota ]] && sum_files+=( initramfs.cpio.gz )
 ( cd "$OUT" && sha256sum "${sum_files[@]}" > SHA256SUMS && cat SHA256SUMS )
 
 echo "[OK] all artifacts in $OUT:"
 echo "       Image            raw kernel"
 echo "       imx8mm-tc8.dtb   raw device tree"
-if [[ $NO_RAMDISK -ne 1 ]]; then
+if [[ $NO_RAMDISK -ne 1 && "$BOOT_MODEL" == boota ]]; then
   echo "       initramfs.cpio.gz busybox ro-root/overlay initramfs (embedded in boot.img)"
 fi
 echo "       boot.img         Android boot.img v0 + AVB hash footer (NONE)   -> fastboot flash boot_a"
