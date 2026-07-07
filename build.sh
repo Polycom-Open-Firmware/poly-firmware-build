@@ -183,7 +183,7 @@ os_profile_tarballs_missing() {
 if [[ $SKIP_ROOTFS -ne 1 ]] && { [[ ! -e "$ROOTFS" ]] || os_profile_tarballs_missing; }; then
     echo "===> [0/3] rootfs tarball(s) (profiles: $OS_PROFILES)"
     if [[ $EUID -eq 0 ]]; then
-        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh --profile="$OS_PROFILES" )
+        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh --profile="$OS_PROFILES" --device="$TARGET_BOARD" )
     else
         ( cd "$DEFAULT_ROOTFS_DIR" && \
           sudo --preserve-env=TC8_FW_VERSION,TC8_ROOTFS_VERSION,TC8_PATCHES_VERSION,TC8_BUILD_DATE,TC8_BUILD_HOST,TC8_SSH_PUBKEY,TC8_ROOT_PASSWORD \
