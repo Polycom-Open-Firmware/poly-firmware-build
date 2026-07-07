@@ -84,26 +84,34 @@ shopt -u nullglob
 
 if (( ${#patch_files[@]} == 0 )); then
   echo "[!!] no .patch files found in $PATCHES — proceeding without patches"
-else
+elif git -C "$LINUX" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # RESET-THEN-APPLY. The old forward/reverse idempotency check broke as
+  # soon as two patches touched the same file (reverse-check of the earlier
+  # patch can never match once a later one modified the file) — it cost two
+  # broken builds on 2026-07-07. Instead: revert tracked files, delete the
+  # files the patches CREATE, then apply the whole series fresh. Object
+  # files are untracked and survive, so rebuilds stay incremental.
+  echo "[+] resetting patch state in $LINUX"
+  git -C "$LINUX" checkout -- .
   for p in "${patch_files[@]}"; do
-    if git -C "$LINUX" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      if git apply --check "$p" >/dev/null 2>&1; then
-        echo "[+] applying $(basename "$p")"
-        git apply "$p"
-      elif git apply --reverse --check "$p" >/dev/null 2>&1; then
-        echo "[=] $(basename "$p") already applied — skipping"
-      else
-        echo "[XX] cannot cleanly apply $(basename "$p") (forward or reverse)" >&2
-        exit 1
-      fi
+    # Delete files this patch CREATES so a re-apply doesn't "already exists".
+    # `|| true`: grep exit 1 (patch creates nothing) must not trip set -e.
+    for nf in $(grep -A3 "^new file mode" "$p" 2>/dev/null | sed -n 's|^+++ b/||p' || true); do
+      rm -f "$LINUX/$nf"
+    done
+  done
+  for p in "${patch_files[@]}"; do
+    echo "[+] applying $(basename "$p")"
+    git -C "$LINUX" apply "$p"
+  done
+else
+  # No git tree — plain patch with the old dry-run idempotency check.
+  for p in "${patch_files[@]}"; do
+    if patch -p1 --dry-run -R --silent < "$p" >/dev/null 2>&1; then
+      echo "[=] $(basename "$p") already applied — skipping"
     else
-      # No git tree — fall back to plain patch with idempotency check
-      if patch -p1 --dry-run -R --silent < "$p" >/dev/null 2>&1; then
-        echo "[=] $(basename "$p") already applied — skipping"
-      else
-        echo "[+] applying $(basename "$p")"
-        patch -p1 < "$p"
-      fi
+      echo "[+] applying $(basename "$p")"
+      patch -p1 < "$p"
     fi
   done
 fi
