@@ -136,8 +136,20 @@ else
   done
 fi
 
+# Per-target firmware blobs for CONFIG_EXTRA_FIRMWARE (e.g. C60's BCM4356
+# wifi/BT + SDMA). If targets/<target>/firmware-blobs exists, stage it into
+# the tree's firmware/ before configuring. TC8 has none — no-op there.
+FW_SRC="$REPO_ROOT/targets/$TARGET/firmware-blobs"
+if [[ -d "$FW_SRC" ]]; then
+  echo "[+] staging $TARGET firmware blobs from $FW_SRC"
+  ( cd "$FW_SRC" && find . -type f ) | while read -r f; do
+    mkdir -p "$(dirname "firmware/$f")"
+    cp -f "$FW_SRC/$f" "firmware/$f"
+  done
+fi
+
 # Install config: start from upstream arm64 defconfig, then merge our
-# TC8-specific overlay (tc8.config is a small fragment, not a full config).
+# target config fragment(s).
 make ARCH="$ARCH" CROSS_COMPILE="$CROSS" defconfig
 scripts/kconfig/merge_config.sh -m .config $CONFIG   # base + target frag (unquoted: may be a list)
 make ARCH="$ARCH" CROSS_COMPILE="$CROSS" olddefconfig
