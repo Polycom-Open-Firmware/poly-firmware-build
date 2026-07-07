@@ -88,6 +88,11 @@ OPTIONS (all optional — defaults wired to submodules from ./bootstrap.sh)
   --linux=DIR        Vanilla linux-6.6 source tree    (default: ./linux-6.6)
   --patches=DIR      tc8-kernel-patches/patches       (default: ./kernel-patches/patches)
   --rootfs=PATH      rootfs tarball or directory      (default: ./rootfs/out/rootfs.tar.gz; auto-built if missing)
+  --os-profile=LIST  device-role profile(s), comma-sep (default: kiosk).
+                     Each becomes rootfs-<name>.{img,simg} built from the
+                     op-tc8-profile-<name> metapackage (see
+                     polycom_dev/PROFILES-PLAN.md M2). NB --profile= is the
+                     BUILD target (emmc/nfs), an unfortunate legacy name.
   --rootfs-size=N    rootfs.img size in bytes         (default: 6843006976 = the userdata partition, 6.4 GiB; larger will not mount)
   --out=DIR          output dir                       (default: ./out/<profile>)
   --skip-kernel      do not rebuild kernel (use existing out/kernel/Image)
@@ -105,6 +110,7 @@ for arg in "$@"; do
     --linux=*) LINUX="${arg#--linux=}";;
     --patches=*) PATCHES="${arg#--patches=}";;
     --rootfs=*) ROOTFS="${arg#--rootfs=}";;
+    --os-profile=*) OS_PROFILES="${arg#--os-profile=}";;
     --profile=*) PROFILE="${arg#--profile=}";;
     --rootfs-size=*) ROOTFS_IMG_SIZE="${arg#--rootfs-size=}";;
     --out=*) OUT="${arg#--out=}";;
@@ -133,6 +139,7 @@ if [[ $SKIP_KERNEL -ne 1 && ! -f "${LINUX}/Makefile" ]]; then
 fi
 
 [[ -n "$PROFILE" ]] || { echo "ERROR: --profile= required" >&2; exit 1; }
+: "${OS_PROFILES:=kiosk}"
 
 # Default OUT to per-profile subdir so emmc and nfs targets coexist.
 if [[ -z "$OUT" ]]; then
@@ -155,14 +162,22 @@ export TC8_FW_VERSION TC8_ROOTFS_VERSION TC8_PATCHES_VERSION TC8_BUILD_DATE TC8_
 
 # Build rootfs lazily if needed. `sudo` strips most env vars, so explicitly
 # preserve the version stamps + customization knobs.
-if [[ $SKIP_ROOTFS -ne 1 && ! -e "$ROOTFS" ]]; then
-    echo "===> [0/3] rootfs tarball (no $ROOTFS yet)"
+os_profile_tarballs_missing() {
+    local pr
+    IFS=',' read -ra _pl <<< "$OS_PROFILES"
+    for pr in "${_pl[@]}"; do
+        [[ -f "$DEFAULT_ROOTFS_DIR/out/rootfs-$pr.tar.gz" ]] || return 0
+    done
+    return 1
+}
+if [[ $SKIP_ROOTFS -ne 1 ]] && { [[ ! -e "$ROOTFS" ]] || os_profile_tarballs_missing; }; then
+    echo "===> [0/3] rootfs tarball(s) (profiles: $OS_PROFILES)"
     if [[ $EUID -eq 0 ]]; then
-        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh )
+        ( cd "$DEFAULT_ROOTFS_DIR" && ./build.sh --profile="$OS_PROFILES" )
     else
         ( cd "$DEFAULT_ROOTFS_DIR" && \
           sudo --preserve-env=TC8_FW_VERSION,TC8_ROOTFS_VERSION,TC8_PATCHES_VERSION,TC8_BUILD_DATE,TC8_BUILD_HOST,TC8_SSH_PUBKEY,TC8_ROOT_PASSWORD \
-              ./build.sh )
+              ./build.sh --profile="$OS_PROFILES" )
     fi
 fi
 [[ -e "$ROOTFS" ]] || { echo "ERROR: rootfs not found at $ROOTFS" >&2; exit 1; }
@@ -286,6 +301,27 @@ TC8_CMDLINE="console=ttymxc1,115200 console=tty0 earlycon=ec_imx6q,0x30890000,11
 # stage-2 boota relocates an overlapping ramdisk past the FDT (fdt_addr =
 # kernel_addr + 64 MiB) before copying — see fb_fsl_boot.c "ramdisk overlap
 # detected". Kept at the stock offset so the header matches stock images.
+# Extra OS-profile variants (beyond the default, which packed above as the
+# compat-named rootfs.img/rootfs.simg). Each rootfs-<p>.tar.gz becomes
+# rootfs-<p>.{img,simg}; header-verify only (the default did the full
+# round-trip; the pipeline is identical).
+EXTRA_SUM_FILES=()
+IFS=',' read -ra _osp <<< "$OS_PROFILES"
+for _p in "${_osp[@]}"; do
+    ptgz="$DEFAULT_ROOTFS_DIR/out/rootfs-$_p.tar.gz"
+    [[ "$_p" == kiosk && ! -f "$ptgz" ]] && continue   # legacy tarball-only build
+    if [[ ! -f "$ptgz" ]]; then
+        echo "ERROR: no tarball for os-profile '$_p' ($ptgz)" >&2; exit 1
+    fi
+    # default profile already packed under the plain names; also emit suffixed
+    echo "===> [2.2/3] os-profile '$_p' -> rootfs-$_p.img/.simg"
+    "$REPO_ROOT/images/rootfs.sh" --rootfs="$ptgz" --out="$OUT/rootfs-$_p.img" --image-size="$ROOTFS_IMG_SIZE"
+    psz=$(stat -c %s "$OUT/rootfs-$_p.img")
+    (( psz <= USERDATA_PARTITION_SIZE )) || { echo "ERROR: rootfs-$_p.img exceeds userdata" >&2; exit 1; }
+    python3 "$REPO_ROOT/tools/mksparse.py" "$OUT/rootfs-$_p.img" "$OUT/rootfs-$_p.simg"
+    EXTRA_SUM_FILES+=( "rootfs-$_p.img" "rootfs-$_p.simg" )
+done
+
 echo "===> [2.5/3] Android boot.img (boot_a) — kernel + initramfs + cmdline (v0)"
 python3 "$REPO_ROOT/tools/mkbootimg.py" \
   --header_version 0 --pagesize 2048 \
@@ -333,13 +369,14 @@ python3 "$REPO_ROOT/tools/avbtool" make_vbmeta_image \
 
 echo "===> [3/3] SHA256SUMS + version stamp"
 cat > "$OUT/version.env" <<EOF
+TC8_OS_PROFILES="$OS_PROFILES"
 TC8_FW_VERSION=$TC8_FW_VERSION
 TC8_ROOTFS_VERSION=$TC8_ROOTFS_VERSION
 TC8_PATCHES_VERSION=$TC8_PATCHES_VERSION
 TC8_BUILD_DATE=$TC8_BUILD_DATE
 TC8_BUILD_HOST=$TC8_BUILD_HOST
 EOF
-sum_files=( Image imx8mm-tc8.dtb boot.img dtbo.img vbmeta.img rootfs.img rootfs.simg version.env )
+sum_files=( Image imx8mm-tc8.dtb boot.img dtbo.img vbmeta.img rootfs.img rootfs.simg version.env "${EXTRA_SUM_FILES[@]}" )
 [[ $NO_RAMDISK -ne 1 ]] && sum_files+=( initramfs.cpio.gz )
 ( cd "$OUT" && sha256sum "${sum_files[@]}" > SHA256SUMS && cat SHA256SUMS )
 
