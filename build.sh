@@ -333,50 +333,14 @@ for _p in "${_osp[@]}"; do
     EXTRA_SUM_FILES+=( "rootfs-$_p.img" "rootfs-$_p.simg" )
 done
 
-echo "===> [2.5/3] Android boot.img (boot_a) — kernel + initramfs + cmdline (v0)"
-python3 "$REPO_ROOT/tools/mkbootimg.py" \
-  --header_version 0 --pagesize 2048 \
-  --base 0x40000000 --kernel_offset 0x00080000 \
-  --ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
-  --cmdline "$TC8_CMDLINE" \
-  --kernel "$OUT/Image" \
-  "${RAMDISK_ARGS[@]}" \
-  --output "$OUT/boot.img"
-
-echo "===> [2.5/3] Android dtbo.img (dtbo_a) — imx8mm-tc8.dtb in DTBO container"
-python3 "$REPO_ROOT/tools/mkdtboimg.py" create "$OUT/dtbo.img" \
-  --dtb "$OUT/imx8mm-tc8.dtb"
-
-# AVB metadata for the slot Android image. NXP `boota` loads vbmeta_a first
-# and refuses an image with NO vbmeta (INVALID_METADATA) even when UNLOCKED — it
-# only forgives signature/hash *mismatches*, not absent metadata. So we add an
-# AVB hash footer to boot.img + dtbo.img and emit a top-level vbmeta.img
-# bundling both hash descriptors. All use `--algorithm NONE`: unsigned but
-# structurally valid (boots only because the bootloader runs unlocked).
-#
-# add_hash_footer grows each image to EXACTLY its GPT partition size with the
-# footer at the tail (boot_a=98304 sectors=50331648 B=48 MiB; dtbo_a=8192
-# sectors=4194304 B=4 MiB). The ANDROID!/DTBO magic stays at offset 0, so the
-# images remain valid Android containers. NONE needs no external crypto — pure
-# python3 stdlib (hashlib SHA256 for the descriptor, no signing).
-BOOT_PARTITION_SIZE=50331648   # boot_a  = 98304 sectors (48 MiB)
-DTBO_PARTITION_SIZE=4194304    # dtbo_a  = 8192  sectors (4 MiB)
-
-echo "===> [2.6/3] AVB hash footer on boot.img (partition boot, ${BOOT_PARTITION_SIZE} B)"
-python3 "$REPO_ROOT/tools/avbtool" add_hash_footer \
-  --image "$OUT/boot.img" --partition_name boot \
-  --partition_size "$BOOT_PARTITION_SIZE" --algorithm NONE
-
-echo "===> [2.6/3] AVB hash footer on dtbo.img (partition dtbo, ${DTBO_PARTITION_SIZE} B)"
-python3 "$REPO_ROOT/tools/avbtool" add_hash_footer \
-  --image "$OUT/dtbo.img" --partition_name dtbo \
-  --partition_size "$DTBO_PARTITION_SIZE" --algorithm NONE
-
-echo "===> [2.6/3] AVB vbmeta.img (vbmeta_a) — hash descriptors for boot + dtbo, unsigned"
-python3 "$REPO_ROOT/tools/avbtool" make_vbmeta_image \
-  --output "$OUT/vbmeta.img" --algorithm NONE \
-  --include_descriptors_from_image "$OUT/boot.img" \
-  --include_descriptors_from_image "$OUT/dtbo.img"
+# --- boot images: per-target recipe (clean separation, dispatch on BOOT_MODEL).
+# tc8 = boota A/B slot images; c60 = booti + system_a. Each targets/<t>/boot.sh
+# defines pack_boot(), which produces the flashable boot artifacts + sets
+# BOOT_SUM_FILES. See targets/<t>/boot.sh and PROFILES-PLAN.md (M6).
+echo "===> [2.5/3] boot images (recipe: $BOOT_MODEL)"
+# shellcheck disable=SC1090
+. "$REPO_ROOT/targets/$TARGET_BOARD/boot.sh"
+pack_boot
 
 echo "===> [3/3] SHA256SUMS + version stamp"
 cat > "$OUT/version.env" <<EOF
@@ -387,7 +351,7 @@ TC8_PATCHES_VERSION=$TC8_PATCHES_VERSION
 TC8_BUILD_DATE=$TC8_BUILD_DATE
 TC8_BUILD_HOST=$TC8_BUILD_HOST
 EOF
-sum_files=( Image imx8mm-tc8.dtb boot.img dtbo.img vbmeta.img rootfs.img rootfs.simg version.env "${EXTRA_SUM_FILES[@]}" )
+sum_files=( Image "$DTB_NAME" "${BOOT_SUM_FILES[@]}" rootfs.img rootfs.simg version.env "${EXTRA_SUM_FILES[@]}" )
 [[ $NO_RAMDISK -ne 1 ]] && sum_files+=( initramfs.cpio.gz )
 ( cd "$OUT" && sha256sum "${sum_files[@]}" > SHA256SUMS && cat SHA256SUMS )
 
