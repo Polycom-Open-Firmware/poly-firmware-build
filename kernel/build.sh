@@ -66,6 +66,13 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -n "$PATCHES" ]] || { echo "ERROR: --patches=DIR required" >&2; exit 1; }
 [[ -d "$LINUX/arch/arm64" ]] || { echo "ERROR: $LINUX does not look like a kernel tree" >&2; exit 1; }
 [[ -d "$PATCHES" ]] || { echo "ERROR: patches dir not found: $PATCHES" >&2; exit 1; }
+# Per-target patch layout (M6): if patches/<target>/ exists, apply from there
+# (patches/tc8/, patches/c60/). Falls back to the flat dir for old layouts.
+: "${TARGET:=tc8}"
+if [[ -d "$PATCHES/$TARGET" ]]; then
+  PATCHES="$PATCHES/$TARGET"
+  echo "[+] per-target patches: $PATCHES"
+fi
 # Config sources: --target=<t> merges config.base + targets/<t>.frag (the
 # converged, one-project-two-targets layout, M6). Legacy --config= (single
 # monolithic file) still works and wins if given. Default target: tc8.
@@ -75,10 +82,8 @@ if [[ -z "$CONFIG" ]]; then
   for f in $CONFIG; do
     [[ -f "$f" ]] || { echo "ERROR: kernel config fragment not found: $f" >&2; exit 1; }
   done
-else
-  # legacy single-file --config
-  [[ -f "$CONFIG" ]] || { echo "ERROR: kernel config not found: $CONFIG" >&2; exit 1; }
 fi
+[[ -f "$CONFIG" ]] || { echo "ERROR: kernel config not found: $CONFIG" >&2; exit 1; }
 [[ -n "$OUT" ]] || OUT="$REPO_ROOT/out/kernel"
 
 mkdir -p "$OUT"
