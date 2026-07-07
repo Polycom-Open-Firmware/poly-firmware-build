@@ -15,6 +15,7 @@ set -euo pipefail
 LINUX=""
 PATCHES=""
 CONFIG=""
+TARGET=""
 JOBS="$(nproc)"
 OUT=""
 ARCH="arm64"
@@ -50,6 +51,7 @@ for arg in "$@"; do
     --linux=*) LINUX="${arg#--linux=}";;
     --patches=*) PATCHES="${arg#--patches=}";;
     --config=*) CONFIG="${arg#--config=}";;
+    --target=*) TARGET="${arg#--target=}";;
     --jobs=*) JOBS="${arg#--jobs=}";;
     --out=*) OUT="${arg#--out=}";;
     --arch=*) ARCH="${arg#--arch=}";;
@@ -64,7 +66,16 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -n "$PATCHES" ]] || { echo "ERROR: --patches=DIR required" >&2; exit 1; }
 [[ -d "$LINUX/arch/arm64" ]] || { echo "ERROR: $LINUX does not look like a kernel tree" >&2; exit 1; }
 [[ -d "$PATCHES" ]] || { echo "ERROR: patches dir not found: $PATCHES" >&2; exit 1; }
-[[ -n "$CONFIG" ]] || CONFIG="$REPO_ROOT/kernel/tc8.config"
+# Config sources: --target=<t> merges config.base + targets/<t>.frag (the
+# converged, one-project-two-targets layout, M6). Legacy --config= (single
+# monolithic file) still works and wins if given. Default target: tc8.
+if [[ -z "$CONFIG" ]]; then
+  : "${TARGET:=tc8}"
+  CONFIG="$REPO_ROOT/kernel/config.base $REPO_ROOT/kernel/targets/$TARGET.frag"
+  for f in $CONFIG; do
+    [[ -f "$f" ]] || { echo "ERROR: kernel config fragment not found: $f" >&2; exit 1; }
+  done
+fi
 [[ -f "$CONFIG" ]] || { echo "ERROR: kernel config not found: $CONFIG" >&2; exit 1; }
 [[ -n "$OUT" ]] || OUT="$REPO_ROOT/out/kernel"
 
@@ -119,7 +130,7 @@ fi
 # Install config: start from upstream arm64 defconfig, then merge our
 # TC8-specific overlay (tc8.config is a small fragment, not a full config).
 make ARCH="$ARCH" CROSS_COMPILE="$CROSS" defconfig
-scripts/kconfig/merge_config.sh -m .config "$CONFIG"
+scripts/kconfig/merge_config.sh -m .config $CONFIG   # base + target frag (unquoted: may be a list)
 make ARCH="$ARCH" CROSS_COMPILE="$CROSS" olddefconfig
 
 # Build
