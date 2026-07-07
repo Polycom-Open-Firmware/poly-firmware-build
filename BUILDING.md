@@ -107,6 +107,8 @@ sparse `rootfs.simg` → `userdata`, `set_active`, and reboots with `boota`.
 ./build.sh --profile=emmc --skip-rootfs                 # keep rootfs tarball, rebuild kernel + repack
 ./build.sh --profile=emmc --skip-kernel --skip-rootfs   # only re-pack from existing artifacts
 ./build.sh --profile=emmc --rootfs-size=4G              # smaller rootfs image (faster fastboot push)
+./build.sh --profile=emmc --os-profile=kiosk,bare       # device-ROLE variants (see below)
+
 ```
 
 Tweaking `kernel/tc8.config` doesn't trigger a rootfs rebuild.
@@ -220,3 +222,17 @@ pct exec 200 -- bash -c '
 ```
 
 A native-host build is otherwise straightforward and recommended.
+
+## Device-role profiles (`--os-profile=`)
+
+Not to be confused with `--profile=emmc|nfs` (the *build target*): an
+**OS profile** is the device's role — what it boots into. Each profile is
+a metapackage `op-tc8-profile-<name>` from the
+[OpenPolycom apt archive](https://github.com/Polycom-Open-Firmware/apt),
+installed into an isolated copy of the shared debootstrap base and packed
+as `rootfs-<name>.{img,simg}` (`TC8_OS_PROFILES` lands in `version.env`,
+`TC8_PROFILE` in the image's `/etc/tc8-version`). The default profile is
+`kiosk`; plain `rootfs.{img,simg}` always alias it so existing tooling and
+the provisioner keep working. The special profile `bare` is the untouched
+base. Full architecture, wizard integration, and roadmap:
+`polycom_dev/PROFILES-PLAN.md`.

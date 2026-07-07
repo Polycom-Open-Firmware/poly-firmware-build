@@ -19,7 +19,10 @@ drivers, no command line:
 - **Unlock** — first time on a fresh panel, hook up a serial adapter and
   let the wizard do the rest. Once per panel, then the adapter goes back in the drawer.
 - **Install the OS** — pick a release, click flash. Keep stock Android in
-  the spare slot if you want a way back.
+  the spare slot if you want a way back. (Per-role image variants — web
+  kiosk today, media player and more to come — are landing via the
+  [OpenPolycom package archive](https://github.com/Polycom-Open-Firmware/apt);
+  builders take `--os-profile=`.)
 - **Configure** — set the kiosk page, hostname, passwords, time zone, and
   certificates from a form; no shell needed.
 - **Update the bootloader** — same wizard, no serial adapter.
