@@ -117,6 +117,7 @@ Status: **✅ implemented** in the v1 reader (`rootfs/etc/tc8-config/apply-confi
 | `VLAN_ID` | ▢ | tag the `lan` port (DSA switch supports it) | `40` |
 | `HTTP_PROXY` | ▢ | proxy for kiosk + updates | `http://proxy:3128` |
 | `NTP_SERVER` | ✅ | `timesyncd.conf` `NTP=` | `192.168.1.1` |
+| `CONFIG_TIME` | ✅ | epoch seconds — **forward-only** clock bump so an offline device (no NTP) boots with a roughly-right clock. Auto-stamped by the wizard at flash time; never moves a real/NTP-synced clock backward. Baseline (no blob) = image build date via `/etc/fake-hwclock.data`. | `1783432800` |
 | `WIFI_SSID` | ✅ | configure `wlan0` with `wpa_supplicant` + DHCP via `systemd-networkd` | `Corp-Guest` |
 | `WIFI_PASSWORD` | ✅ | WPA/WPA2 passphrase for `WIFI_SSID`; omit for open Wi-Fi | `s3cretwifi` |
 | `WIFI_COUNTRY` | ✅ | optional regulatory country in `wpa_supplicant` config | `US` |
