@@ -21,7 +21,6 @@ OUT=""
 ARCH="arm64"
 CROSS="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 DTB_NAME="imx8mm-tc8.dtb"   # override with --dtb-name (per-target)
-DTB_SUBPATH="arch/arm64/boot/dts/freescale/$DTB_NAME"
 
 usage() {
   cat <<EOF
@@ -61,6 +60,10 @@ for arg in "$@"; do
     *) echo "unknown arg: $arg" >&2; exit 1;;
   esac
 done
+
+# Derive AFTER arg parsing so --dtb-name takes effect (was computed from
+# the default up top, ignoring the override — cost the C60 DTB check).
+DTB_SUBPATH="arch/arm64/boot/dts/freescale/$DTB_NAME"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -n "$LINUX"   ]] || { echo "ERROR: --linux=DIR required" >&2; exit 1; }
