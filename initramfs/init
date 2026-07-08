@@ -95,6 +95,35 @@ if [ -z "$mode" ]; then
 fi
 [ "$mode" = "rw" ] || mode=ro
 
+# ------------------------------------------------- config blob (consume) --
+# A staged config blob in `cache` is applied HERE, before the rootfs seals:
+# mount the real fs rw for a few seconds, chroot in, and run the applier
+# (full userland: chpasswd, offline systemctl, update-ca-certificates). The
+# applier consumes the blob (zeroes its header) as its LAST step, so a power
+# yank mid-apply leaves the blob intact and it re-applies cleanly next boot.
+# The filesystem is the ONLY store of device state — no snapshot layer. On
+# targets without an initramfs (C60 today) the runtime tc8-config.service
+# does the same thing against the live fs; on sealed boots that service
+# no-ops (initramfs owns the blob here).
+cfgdev=$(find_partlabel cache) || cfgdev=
+if [ -n "$cfgdev" ] && [ "$(dd if=$cfgdev bs=8 count=1 2>/dev/null)" = "TC8CFGv1" ]; then
+	log "config blob staged in cache — applying to the real rootfs pre-seal"
+	if mount -t ext4 -o rw "$rootdev" /newroot 2>/dev/null; then
+		mount -o bind /dev  /newroot/dev
+		mount -o bind /proc /newroot/proc
+		mount -o bind /sys  /newroot/sys
+		if TC8_CFG_DEV=$cfgdev chroot /newroot /etc/tc8-config/apply-config.sh; then
+			log "config applied and blob consumed"
+		else
+			log "config apply FAILED — blob left in place for next boot"
+		fi
+		umount /newroot/dev /newroot/proc /newroot/sys 2>/dev/null
+		umount /newroot || rescue "could not unmount rootfs after config apply"
+	else
+		log "rw mount for config apply failed — blob left for next boot"
+	fi
+fi
+
 # ------------------------------------------------------------------ mount --
 if [ "$mode" = "rw" ]; then
 	log "MAINTENANCE MODE: mounting $rootdev direct-rw (writes are permanent)"
