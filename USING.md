@@ -102,5 +102,7 @@ After editing, `systemctl restart kiosk`.
 
 Hostname, kiosk URL, credentials, NTP, timezone, CA certs and more can be
 pushed over fastboot by the provisioner — a config blob flashed to the
-`cache` partition, applied on every boot. See
+`cache` partition, applied **once per unique config** (a re-provision
+re-applies; the applied state persists across sealed reboots). Includes
+the device's application/role (`PROFILE`: kiosk / dev). See
 [CONFIG-PARTITION.md](CONFIG-PARTITION.md) for the key schema.

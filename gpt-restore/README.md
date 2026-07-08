@@ -1,5 +1,7 @@
 # TC8 partition-table restore
 
+> **Scope: TC8 target** (the stock TC8 A/B GPT; the C60 keeps its own stock table).
+
 Restores the eMMC GPT on a unit whose partition table was nuked — **over USB
 fastboot, no serial, no brick risk**. Captured from a healthy unit; all four GPT
 CRC32s validate.
