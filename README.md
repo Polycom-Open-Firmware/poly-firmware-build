@@ -82,8 +82,9 @@ install, no drivers, no command line:
   so first boot needs no network; the picker writes `PROFILE=` in the
   config blob ([CONFIG-PARTITION.md](CONFIG-PARTITION.md)).
 - **Configure** — kiosk page, hostname, Wi-Fi, passwords, time zone, and
-  certificates from a form; no shell needed. Applied once per config, and
-  offline devices still boot with a roughly-right clock.
+  certificates from a form; no shell needed. The config blob is consumed
+  on the next boot (applied, then invalidated — it's a message, not a
+  store), and offline devices still boot with a roughly-right clock.
 - **Update the bootloader** — same wizard, no serial adapter.
 
 Once installed, getting back into the wizard is a four-finger tap during

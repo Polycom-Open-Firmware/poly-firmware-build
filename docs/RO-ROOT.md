@@ -137,11 +137,14 @@ through the bind at shutdown.
 
 ## Interactions audited
 
-- **tc8-config.service** — applies the cache-partition blob **once per unique blob** (sha-gated; on unchanged sealed reboots it silently restores a persisted /etc snapshot from facres rather than re-applying)
-  (it already re-runs; under the overlay its `/etc` writes are ephemeral, so
-  each boot = pristine baked `/etc` + blob, fully deterministic). Ordering
-  unchanged: after tc8-persist-root, before networkd/kiosk. In maintenance
-  mode its writes stick — harmless, it's idempotent.
+- **config blob** — consumed pre-seal by the **initramfs**: a staged blob
+  is applied to the real rootfs (mounted rw for seconds, chroot, full
+  userland) and invalidated in place before the overlay is assembled, so
+  the applied state is simply *in the filesystem*. The runtime
+  tc8-config.service gates itself out on overlay boots ("the initramfs
+  owns the blob") and serves direct-rw boots and no-initramfs targets
+  (C60 today). Invalidate-last keeps it atomic: a power cut mid-apply
+  leaves the blob to re-apply next boot.
 - **/data (kiosk cache, MTP export)** — `/data` on this image is
   `/dev/mmcblk2p15` = **the userdata partition itself**, i.e. the rootfs
   mounted a second time. In sealed mode that rw mount fails (superblock is
@@ -207,9 +210,10 @@ Sealed-mode semantics:
    `mount | grep ' /data '` shows nothing — expected).
 5. ssh in (same host keys as before), DHCP lease fresh, `journalctl` works,
    no `/var/log/journal`.
-6. Wizard "Reconfigure" (cache blob): applies **once** on the next boot
-   (sha-gated); `KIOSK_URL` sticks across sealed reboots because the
-   applied `/etc` is snapshot-restored from facres, not re-applied.
+6. Wizard "Reconfigure" (cache blob): consumed on the next boot — the
+   initramfs applies it to the real rootfs pre-seal and zeroes the blob
+   header; `KIOSK_URL` sticks across sealed reboots because it now lives
+   in the real filesystem.
 7. `date` sane on boot before NTP (fake-hwclock via facres); advance clock,
    clean reboot, still sane.
 

@@ -4,8 +4,12 @@
 
 How the provisioning wizard pushes device configuration and stage-2
 bootloader updates to a TC8 over fastboot — no serial, no bootloader
-change. The wizard writes a blob to the stock `cache` GPT partition;
-boot-time services apply it before the kiosk starts. This doc is the
+change. The wizard writes a blob to the stock `cache` GPT partition; the
+device applies it at the next boot and then invalidates it in place — the
+blob is a one-shot message, not a store. On sealed (overlay) boots the
+initramfs applies it to the real rootfs before sealing; on direct-rw boots
+and targets without an initramfs (C60 today) the `tc8-config` boot service
+does the same against the live filesystem. This doc is the
 contract: the Linux half is implemented in this repo, and the wizard half
 (build + flash the blob) implements against the format below.
 
@@ -46,8 +50,14 @@ little-endian. The config blob sits at offset 0; a staged bootloader
   at the **next sector** (1 MiB + 512), sector-aligned.
 - The device verifies magic + sha256 before applying either half. A
   fresh or empty `cache` (no magic) or a corrupt, half-written blob is
-  ignored — the unit keeps its current config and bootloader. Applied
-  ONCE per unique blob (sha-gated, marker on facres); the blob is not cleared. A re-provision writes a new blob → re-applies. In sealed mode the applied /etc is persisted + restored so it survives reboots without re-running.
+  ignored — the unit keeps its current config and bootloader.
+- **Consume-once**: a present, valid config blob is always applied, then
+  invalidated in place (its 64-byte header is zeroed) as the applier's
+  last step. The filesystem is the only store of device state — there is
+  no snapshot or marker layer. Invalidate-last makes the apply atomic: a
+  power cut mid-apply leaves the blob intact and it re-applies cleanly on
+  the next boot. Applying a blob is explicit intent — it overwrites
+  whatever is configured on the device, including maintenance-mode edits.
 - Cache is 1 GiB, so even with a ~3 MiB stage-2 the composite is tiny;
   fastboot writes from offset 0, no need to write the whole partition.
 
@@ -105,7 +115,7 @@ default target accordingly and records `/etc/tc8-profile`. Baked role packages
 (`poly-<device>-profile-<id>`) supply each role's apps — nothing is fetched.
 | key | st | effect | example |
 |-----|----|--------|---------|
-| `PROFILE` | ✅ | device role. `kiosk` → `graphical.target` (fullscreen `kiosk.service`); `dev` → `multi-user.target` + tty1 autologin + ssh (no kiosk lock); `smart-speaker` (C60) → `multi-user.target`, enables the voice app service if baked, else console. Unset → `kiosk`. | `dev` |
+| `PROFILE` | ✅ | device role. `kiosk` → `graphical.target` (fullscreen `kiosk.service`); `dev` → `multi-user.target` + tty1 autologin + ssh (no kiosk lock); `smart-speaker` (C60) → `multi-user.target`, enables the voice app service if baked, else console. Omitted → the device role is left untouched (a config-only push never resets the role); unknown value → kiosk. | `dev` |
 
 ### Kiosk / display
 | key | st | effect | example |
