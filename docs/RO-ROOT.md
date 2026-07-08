@@ -207,8 +207,9 @@ Sealed-mode semantics:
    `mount | grep ' /data '` shows nothing — expected).
 5. ssh in (same host keys as before), DHCP lease fresh, `journalctl` works,
    no `/var/log/journal`.
-6. Wizard "Reconfigure" (cache blob): applies on next boot and **every**
-   boot; `KIOSK_URL` sticks across reboots (because reapplied, not stored).
+6. Wizard "Reconfigure" (cache blob): applies **once** on the next boot
+   (sha-gated); `KIOSK_URL` sticks across sealed reboots because the
+   applied `/etc` is snapshot-restored from facres, not re-applied.
 7. `date` sane on boot before NTP (fake-hwclock via facres); advance clock,
    clean reboot, still sane.
 
