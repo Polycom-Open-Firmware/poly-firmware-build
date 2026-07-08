@@ -1,5 +1,7 @@
 # RO-ROOT — read-only rootfs with tmpfs overlay + persistent /root
 
+> **Scope: TC8 target.** The C60 boots its rootfs directly from `system_a` (no initramfs/overlay yet) — see the [README](../README.md).
+
 Target: **v0.5.x** (v0.4.5 and earlier mount `userdata` rw directly).
 
 ## TL;DR

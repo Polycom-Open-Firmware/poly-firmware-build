@@ -1,7 +1,22 @@
 # Building the image
 
-Build the sideloaded Linux image for a Polycom TC8 panel from a fresh
-checkout. Two profiles share the same kernel + rootfs:
+Build the sideloaded Linux image for a Polycom panel from a fresh
+checkout. **One repo, two targets** — `--target=` picks the board:
+
+- `--target=tc8` (default) — the TC8 panel: `boota` slot image
+  (`boot.img` + `dtbo.img` + `vbmeta.img`, unsigned AVB) + sparse
+  `rootfs.simg` for `userdata`.
+- `--target=c60` — the Trio C60: `booti` image set (`boot.img` with the
+  DTB in its `second` area, Android-DTBO `dtbo.img`, **signed** vbmeta) +
+  `rootfs.img.zst` for `system_a` (hard 1.6 GiB budget).
+
+A target is `targets/<t>/target.env` (board facts: DTB, partitions, boot
+geometry) + `targets/<t>/boot.sh` (the boot-image recipe) — the kernel is
+`kernel/config.base` merged with `kernel/targets/<t>.frag`, patched from
+`kernel-patches/patches/<t>/`, and the rootfs builder gets `--device=<t>`
+so the right `poly-<device>-profile-<role>` package lands. Everything
+below applies to both targets unless it names one; the worked examples
+use the TC8. Two profiles share the same kernel + rootfs:
 
 - `emmc` — the slotable Android image (`boot.img` + `dtbo.img` +
   `vbmeta.img` + sparse `rootfs.simg`), booted by `boota` and installed by

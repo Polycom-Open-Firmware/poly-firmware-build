@@ -59,4 +59,4 @@ Related: **[FLASHING.md](FLASHING.md)** (partitions, stage-2 chainload),
 **[QUICKSTART.md](QUICKSTART.md)** (manual recipe), **[NETBOOT.md](NETBOOT.md)**
 (TFTP/NFS), **[CONFIG-PARTITION.md](CONFIG-PARTITION.md)** (the `cache`-blob
 config contract the wizard writes). Deep detail → **[BUILDING.md](BUILDING.md)**.
-Convergence plan / milestones → **[../PROFILES-PLAN.md](../PROFILES-PLAN.md)**.
+Convergence plan / milestones → `PROFILES-PLAN.md` in the polycom_dev workspace (not in this repo).

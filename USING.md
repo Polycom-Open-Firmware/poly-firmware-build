@@ -1,5 +1,7 @@
 # Using the panel
 
+> **Scope: TC8 target.** The C60 boots differently (`booti`, `system_a`, SDP unlock) — see the [README](README.md) and the provisioner's C60 flow.
+
 Getting into an installed panel and changing its configuration.
 
 ## Getting in

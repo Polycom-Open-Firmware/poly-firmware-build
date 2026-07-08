@@ -1,5 +1,7 @@
 # TC8 cache partition — autoconfigure + bootloader updates (v1)
 
+> **Scope: both targets.** The wizard writes this blob on the TC8 and the C60 (the C60 uses a raw-LBA `cache` write); `apply-config` in the shared rootfs reads it on both. Key names keep the historical `TC8` prefixes.
+
 How the provisioning wizard pushes device configuration and stage-2
 bootloader updates to a TC8 over fastboot — no serial, no bootloader
 change. The wizard writes a blob to the stock `cache` GPT partition;

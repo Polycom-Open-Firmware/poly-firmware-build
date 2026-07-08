@@ -1,5 +1,7 @@
 # Flashing — boot model and provisioning
 
+> **Scope: TC8 target.** The C60 boots differently (`booti`, `system_a`, SDP unlock) — see the [README](README.md) and the provisioner's C60 flow.
+
 How to take a Polycom TC8 panel from stock (or a previous rev of this
 sideload) onto the current build. Result: panel boots from eMMC into a
 fullscreen Wayland kiosk (cage + cog) — see [USING.md](USING.md) for

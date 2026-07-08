@@ -1,5 +1,7 @@
 # Quickstart — bootstrap a fresh TC8, then provision
 
+> **Scope: TC8 target.** The C60 boots differently (`booti`, `system_a`, SDP unlock) — see the [README](README.md) and the provisioner's C60 flow.
+
 A fresh TC8 has only stock signed U-Boot, which won't auto-enter fastboot.
 This is the **one-time serial bootstrap**: catch stock U-Boot over the UART,
 force it into fastboot, then let the

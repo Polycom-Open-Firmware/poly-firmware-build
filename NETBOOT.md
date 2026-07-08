@@ -1,5 +1,7 @@
 # Netboot — TFTP kernel + NFS rootfs
 
+> **Scope: TC8 target.** The C60 boots differently (`booti`, `system_a`, SDP unlock) — see the [README](README.md) and the provisioner's C60 flow.
+
 How to netboot the TC8 panel: u-boot pulls a kernel and DTB over TFTP, and the kernel mounts its rootfs over NFSv3. Result: the same fullscreen Wayland kiosk (cage + cog) as the eMMC target, but nothing is written to the device's flash.
 
 > This is a development path, not the production install. The shipped
