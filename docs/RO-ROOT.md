@@ -2,8 +2,6 @@
 
 > **Scope: TC8 target.** The C60 boots its rootfs directly from `system_a` (no initramfs/overlay yet) — see the [README](../README.md).
 
-Target: **v0.5.x** (v0.4.5 and earlier mount `userdata` rw directly).
-
 ## TL;DR
 
 | | mount of `userdata` | writes | how you get there |
@@ -15,43 +13,34 @@ Target: **v0.5.x** (v0.4.5 and earlier mount `userdata` rw directly).
 survives reboots *and* reflashes). Everything else in sealed mode is
 ephemeral by design.
 
-## Architecture: why a minimal initramfs (option a), not systemd tmpfs units (option b)
+## Architecture
 
-The image boots as an Android boot.img v0 via the stage-2 U-Boot's `boota`;
-there is no initrd today and `systemd.volatile=overlay` needs one. Two ways
-to get an overlay:
+The overlay is set up by a **minimal initramfs inside boot.img**: a ~1 MB
+gzipped cpio holding a static busybox and one auditable POSIX-sh script
+(`initramfs/init`). It mounts the real root itself and `switch_root`s into
+the merged tree. Properties:
 
-- **(a) minimal initramfs in boot.img** — a ~1 MB gzipped cpio (static
-  busybox + one auditable POSIX-sh script, `initramfs/init`) that mounts the
-  real root itself and `switch_root`s.
-- **(b) systemd early-boot units** overlaying `/etc`, `/var`, `/home` with
-  tmpfs uppers while `/` stays ro.
+- **All of `/` is sealed** — one overlay over the whole rootfs, not
+  per-directory tmpfs mounts, so nothing is accidentally left writable.
+- **The mode decision happens before any filesystem is mounted rw**, which
+  is what makes maintenance mode dpkg-safe: in direct-rw there is no
+  overlay at all, so dpkg's database and its payload land on the same
+  filesystem and cannot tear apart.
+- **systemd sees an ordinary writable `/`** — no special ordering around
+  `systemd-remount-fs`, `tmpfiles`, or `machine-id`.
+- Cost: ~1 MB in boot.img (26.2 of 48 MiB used) and one moving part at
+  boot. The script is ~150 lines and fails **towards booting** (see
+  failure modes).
 
-We chose **(a)**:
-
-- It seals **all of /** (option b leaves `/usr`, `/opt`, `/srv`… either
-  writable or un-overlayed, and every new writer needs a new unit).
-- It gives a clean **maintenance-mode switch**: the decision is made before
-  any fs is mounted rw, so "direct rw, no overlay" is trivially reachable
-  and dpkg-safe. With (b) there is no safe apt story at all: dpkg's db
-  (`/var/lib/dpkg`) would live on a tmpfs upper while `/usr` payload landed
-  on the ro-remounted lower (or vice versa) — the db and the payload tear
-  apart and the dpkg state is corrupted. That hazard is structural to (b).
-- systemd sees a perfectly ordinary writable `/` — no unit-ordering
-  minefield around `systemd-remount-fs`, `tmpfiles`, `machine-id`, etc.
-- Cost: +1 MB in boot.img (26.2 of 48 MiB used) and one more moving part at
-  boot. The script is ~150 lines and fails **towards booting** (see failure
-  modes).
-
-`boota` detail that makes this safe: our v0 header keeps the stock
+`boota` detail that makes this safe: the v0 header keeps the stock
 `ramdisk_offset` (0x01000000), which on paper overlaps the 24 MiB kernel —
-but the stage-2 `boota` detects the overlap and relocates the ramdisk past
-the FDT at `kernel_addr + 64 MiB` before copying
+the stage-2 `boota` detects the overlap and relocates the ramdisk past the
+FDT at `kernel_addr + 64 MiB` before copying
 (`fb_fsl_boot.c: "ramdisk overlap detected"`), then passes it to `booti` as
-`addr:size`. The kernel cmdline is unchanged from v0.4.5 (`rw ...
-root=PARTLABEL=userdata`): `root=`/`rw` are parsed by the initramfs, keep
-the kernel's own fallback correct if the ramdisk is ever absent, and stop
-`systemd-remount-fs` from remounting the overlay ro.
+`addr:size`. The kernel cmdline keeps `rw ... root=PARTLABEL=userdata`:
+`root=`/`rw` are parsed by the initramfs, keep the kernel's own fallback
+correct if the ramdisk is ever absent, and stop `systemd-remount-fs` from
+remounting the overlay ro.
 
 ## Boot flow
 
@@ -143,7 +132,7 @@ through the bind at shutdown.
   the applied state is simply *in the filesystem*. The runtime
   tc8-config.service gates itself out on overlay boots ("the initramfs
   owns the blob") and serves direct-rw boots and no-initramfs targets
-  (C60 today). Invalidate-last keeps it atomic: a power cut mid-apply
+  (the C60). Invalidate-last keeps it atomic: a power cut mid-apply
   leaves the blob to re-apply next boot.
 - **/data (kiosk cache, MTP export)** — `/data` on this image is
   `/dev/mmcblk2p15` = **the userdata partition itself**, i.e. the rootfs
@@ -171,8 +160,8 @@ through the bind at shutdown.
 
 | failure | behaviour |
 |---|---|
-| overlay/tmpfs mount fails (e.g. kernel built without `OVERLAY_FS=y`) | init logs `overlay setup FAILED` and **falls back to direct-rw** — boots like v0.4.5 |
-| ramdisk absent from boot.img | kernel falls back to cmdline `root=…` rw direct-mount — boots like v0.4.5 |
+| overlay/tmpfs mount fails (e.g. kernel built without `OVERLAY_FS=y`) | init logs `overlay setup FAILED` and **falls back to direct-rw** — boots direct-rw, no overlay |
+| ramdisk absent from boot.img | kernel falls back to cmdline `root=…` rw direct-mount — boots direct-rw, no overlay |
 | `/init` crashes / rootfs partition never appears | rescue busybox shell on console (serial + panel); `exit` reboots (`panic=10` guards the no-console case) |
 | facres missing | initramfs: no flag possible → always sealed. tc8-persist-root exits 0 → `/root` non-persistent. `tc8-rw` refuses with a clear error (cmdline `tc8.rootfs=rw` still available) |
 | facres corrupt / not ext4 | initramfs ro-mount fails → sealed boot; then tc8-persist-root **reformats** facres (mkfs.ext4, prior-art behaviour — facres content is expendable by design) and persistence resumes empty |
