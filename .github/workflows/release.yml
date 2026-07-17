@@ -78,24 +78,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Title as "TC8 <tag>" (house style); the "— <highlights>" suffix and the
+          # curated prose body are written by hand per release (see prior releases).
+          # --generate-notes seeds a commit changelog to curate from.
           tag="${GITHUB_REF#refs/tags/}"
-          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
-          {
-            echo "Open Debian firmware for the **Polycom TC8** conference control panel (i.MX8MM)."
-            echo "Flash it in your browser at **https://wizard.openpolycom.cc** → select *Polycom TC8*."
-            echo
-            echo "The install **wipes the root partition** and replaces the OS; files in \`/root\` (the data partition) survive the reinstall."
-            echo
-            echo "## Components"
-            sed 's/^/- /' assets/version.env
-            if [ -n "$prev" ]; then
-              echo
-              echo "**Changelog:** https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${tag}"
-            fi
-          } > notes.md
           gh release create "$tag" \
-              --title "Polycom TC8 — $tag" \
-              --notes-file notes.md \
+              --title "TC8 $tag" \
+              --generate-notes \
               assets/boot.img \
               assets/dtbo.img \
               assets/vbmeta.img \
