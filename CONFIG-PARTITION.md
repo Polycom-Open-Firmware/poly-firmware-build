@@ -1,4 +1,4 @@
-# TC8 cache partition — autoconfigure + bootloader updates (v1)
+# Cache partition — autoconfigure + bootloader updates (v1)
 
 > **Scope: both targets.** The wizard writes this blob on the TC8 and the C60 (the C60 uses a raw-LBA `cache` write); `apply-config` in the shared rootfs reads it on both. Key names keep the `TC8` prefixes for compatibility.
 
@@ -123,7 +123,7 @@ default target accordingly and records `/etc/tc8-profile`. Baked role packages
 | `KIOSK_URL` | ✅ | `/etc/default/tc8-kiosk` `KIOSK_URL=` (web page **or** `rtsp://…`) | `https://dash.local` |
 | `KIOSK_URL_FALLBACK` | ✅ | secondary URL if primary unreachable | `https://backup.local` |
 | `COG_OPTS` | ✅ | cog browser flags | `--enable-media=true` |
-| `ROTATION` | ▢ | panel orientation override (cage `-r` count) | `1` |
+| `ROTATION` | ▢ | panel orientation override (weston output `transform`) | `1` |
 | `BLANK_TIMEOUT` | ▢ | screen-blank / DPMS seconds (0 = always on) | `0` |
 | `BRIGHTNESS` | ▢ | backlight 0–100 | `80` |
 | `RELOAD_INTERVAL` | ▢ | periodic kiosk reload / crash-watchdog (s) | `3600` |
@@ -177,10 +177,7 @@ default target accordingly and records `/etc/tc8-profile`. Baked role packages
 > `*_B64` keys — this keeps the payload single-line `KEY=value`. Unknown keys
 > are logged and ignored, so the wizard can send a superset safely.
 
-## Precedence and flows
-- **Precedence:** the `cache` blob is the base; a local `/data/poly-kiosk/config`
-  file (existing `kiosk-config.service`) still overrides it. So a hands-on
-  local edit beats the last pushed config.
+## Flows
 - **Reconfigure** (already-unlocked unit): four-finger gesture → fastboot →
   wizard builds the blob from the form → `fastboot flash cache` →
   `fastboot reboot`.
@@ -227,7 +224,7 @@ this format. Don't put anything in here you wouldn't accept on the device's disk
 ## Linux side (implemented here)
 - `rootfs/etc/tc8-config/apply-config.sh` — config reader (POSIX sh, busybox/coreutils only).
 - `rootfs/etc/tc8-config/update-bootloader.sh` — bootloader reader/flasher.
-- `rootfs/etc/systemd/system/tc8-config.service` — oneshot, `Before=kiosk-config.service kiosk.service`.
+- `rootfs/etc/systemd/system/tc8-config.service` — oneshot, `Before=kiosk.service`.
 - `rootfs/etc/systemd/system/tc8-update-bootloader.service` — runs the flasher at boot.
 - Enabled in `rootfs/chroot-setup.sh`. To add a `▢` key: extend the reader's
   `case`, flip it to ✅ here.

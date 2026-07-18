@@ -45,8 +45,9 @@ What you get on the panel:
 - **Persistent `/root`**: root's home lives on a spare eMMC partition and
   survives reboots *and* full reinstalls ([USING.md](USING.md))
 
-Everything boots into a fullscreen Wayland kiosk (`cage` + `cog`) — by
-default a bundled touch-tester; point `KIOSK_URL` at any page you like
+Everything boots into a fullscreen Wayland kiosk (weston + cog by
+default; `KIOSK_ENGINE` selects the browser) — the stock page is a
+bundled touch-tester; point `KIOSK_URL` at any page you like
 ([USING.md](USING.md)).
 
 ## The Polycom Trio C60
@@ -77,7 +78,7 @@ install, no drivers, no command line:
   keep stock Android in the spare slot as a way back.
 - **Choose an application** — what the device runs at boot: web **kiosk**
   (default), **developer** console (ssh, no kiosk lock), or — on the C60 —
-  **smart speaker** (in progress). Role packages are baked into the image,
+  **smart speaker**. Role packages are baked into the image,
   so first boot needs no network; the picker writes `PROFILE=` in the
   config blob ([CONFIG-PARTITION.md](CONFIG-PARTITION.md)).
 - **Configure** — kiosk page, hostname, Wi-Fi, passwords, time zone, and
@@ -135,12 +136,22 @@ top.
 **Build and develop**
 
 - **[BUILDING.md](BUILDING.md)** — *both targets* — host setup (Ubuntu), build pipeline, `--target=`, repo layout, image-size guards
+- **[RELEASING.md](RELEASING.md)** — *both targets* — the release contract: asset names the wizard depends on, manifests, gates
 - **[NETBOOT.md](NETBOOT.md)** — *TC8* — TFTP and NFS development path; nothing is written to flash
 - **[docs/RO-ROOT.md](docs/RO-ROOT.md)** — *TC8* — the sealed-rootfs design (read-only + overlay + maintenance mode)
 
 **Provisioner contracts**
 
 - **[CONFIG-PARTITION.md](CONFIG-PARTITION.md)** — *both targets* — the `cache`-partition blob: application/role (`PROFILE`), autoconfigure key schema, no-serial bootloader updates
+
+**Extend — add apps and profiles**
+
+Everything the devices run is a plain Debian package from the project's own
+apt archive — adding an app is a metapackage away.
+
+- **[packages](https://github.com/Polycom-Open-Firmware/packages)** `DEVELOPING.md` — the add-an-app/profile cookbook: metapackage → archive → image variant → wizard entry
+- **[apt](https://github.com/Polycom-Open-Firmware/apt)** — the package archive: client setup, publishing pipeline
+- **[provisioner](https://github.com/Polycom-Open-Firmware/provisioner)** — the wizard: architecture, flavors, hosting
 
 ## License
 

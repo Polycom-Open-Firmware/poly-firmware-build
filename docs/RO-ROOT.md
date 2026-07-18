@@ -124,7 +124,7 @@ through the bind at shutdown.
 `tc8-rw`/`tc8-ro` keep their mode flag at the facres fs root, next to
 `tc8-root/`. The initramfs only ever mounts facres **ro** to read the flag.
 
-## Interactions audited
+## Interactions
 
 - **config blob** — consumed pre-seal by the **initramfs**: a staged blob
   is applied to the real rootfs (mounted rw for seconds, chroot, full
@@ -140,9 +140,7 @@ through the bind at shutdown.
   held ro by the overlay lower) — `kiosk.service`'s ExecStartPre
   `|| true`s it and then `install -d`s the dirs, which land on the
   overlay: kiosk cache and the MTP "Panel storage" are **ephemeral** in
-  sealed mode and persistent in maintenance mode. Same story
-  for `kiosk-config.service`'s optional `/data/poly-kiosk/config` override
-  (use the cache-blob config path instead, or maintenance mode).
+  sealed mode and persistent in maintenance mode.
 - **alsa** — `alsa-restore` reads the baked safe-volume state from the ro
   lower every boot; runtime mixer changes evaporate (the shutdown store
   writes the upper). Volumes are re-assertable per boot via the config
@@ -150,11 +148,11 @@ through the bind at shutdown.
 - **ssh** — host keys are baked at build (lower), stable across reboots.
 - **DHCP** — `wipe-networkd-leases` + leases under `/var/lib` on the upper:
   fresh DHCPDISCOVER every boot, as designed.
-- **journald** — `Storage=volatile` + `/var/log` tmpfs via fstab, unchanged;
+- **journald** — `Storage=volatile` + `/var/log` tmpfs via fstab;
   no `/var/log/journal` is created anywhere.
 - **dev paths** — the `nfs` profile and the `booti`/onboard.sh path don't
-  carry the initramfs; they keep their existing rw behaviour
-  (`profiles/emmc.env` `KERNEL_CMDLINE` untouched).
+  carry the initramfs; they boot rw with no overlay
+  (`profiles/emmc.env` `KERNEL_CMDLINE` has no initramfs).
 
 ## Failure modes
 

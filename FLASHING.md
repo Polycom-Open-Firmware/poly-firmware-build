@@ -4,7 +4,7 @@
 
 How to take a Polycom TC8 panel from stock (or a previous rev of this
 sideload) onto the current build. Result: panel boots from eMMC into a
-fullscreen Wayland kiosk (cage + cog) — see [USING.md](USING.md) for
+fullscreen Wayland kiosk — see [USING.md](USING.md) for
 getting in and pointing `KIOSK_URL` at your own page.
 
 ## How the slot image boots
@@ -109,6 +109,9 @@ the config-key schema, and the stage-2-into-`boot1` update flow.
   `flashos` to rewrite the active slot.
 - **Bad stage-2** — re-stage it through the `cache` partition (above); the OS
   reflashes `boot1` and verifies before switching.
+- **Damaged partition table** — the provisioner detects a missing/broken GPT
+  (`getvar partition-size:…` fails) and repairs it from the shipped restore
+  image; mechanics in [gpt-restore/README.md](gpt-restore/README.md).
 - **Stage-1 (total brick)** — very rare, since `boot0` is never written:
   NXP SDP recovery with `uuu` over USB. Out of scope here.
 
