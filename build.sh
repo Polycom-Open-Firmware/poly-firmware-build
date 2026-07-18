@@ -90,9 +90,10 @@ OPTIONS (all optional — defaults wired to submodules from ./bootstrap.sh)
   --rootfs=PATH      rootfs tarball or directory      (default: ./rootfs/out/rootfs.tar.gz; auto-built if missing)
   --os-profile=LIST  device-role profile(s), comma-sep (default: kiosk).
                      Each becomes rootfs-<name>.{img,simg} built from the
-                     op-tc8-profile-<name> metapackage (see
-                     polycom_dev/PROFILES-PLAN.md M2). NB --profile= is the
-                     BUILD target (emmc/nfs), an unfortunate legacy name.
+                     poly-app-<name> archive package (per-device
+                     poly-<device>-profile-<name> as fallback; see the
+                     packages repo). NB --profile= is the BUILD target
+                     (emmc/nfs), an unfortunate legacy name.
   --rootfs-size=N    rootfs.img size in bytes         (default: 6843006976 = the userdata partition, 6.4 GiB; larger will not mount)
   --out=DIR          output dir                       (default: ./out/<profile>)
   --skip-kernel      do not rebuild kernel (use existing out/kernel/Image)
@@ -188,7 +189,7 @@ if [[ $SKIP_ROOTFS -ne 1 ]] && { [[ ! -e "$ROOTFS" ]] || os_profile_tarballs_mis
     else
         ( cd "$DEFAULT_ROOTFS_DIR" && \
           sudo --preserve-env=TC8_FW_VERSION,TC8_ROOTFS_VERSION,TC8_PATCHES_VERSION,TC8_BUILD_DATE,TC8_BUILD_HOST,TC8_SSH_PUBKEY,TC8_ROOT_PASSWORD \
-              ./build.sh --profile="$OS_PROFILES" )
+              ./build.sh --profile="$OS_PROFILES" --device="$TARGET_BOARD" ${EXTRA_PKGS:+--extra-pkgs="$EXTRA_PKGS"} )
     fi
 fi
 [[ -e "$ROOTFS" ]] || { echo "ERROR: rootfs not found at $ROOTFS" >&2; exit 1; }

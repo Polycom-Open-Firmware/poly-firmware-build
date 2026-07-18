@@ -34,7 +34,7 @@ REQUIRED
   --patches=DIR      Path to poly-kernel-patches/patches directory (*.patch)
 
 OPTIONS
-  --config=FILE      Kernel .config to install (default: kernel/tc8.config in this repo)
+  --config=FILE      Kernel .config to install (default: kernel/config.base + kernel/targets/<target>.frag merged)
   --jobs=N           make -j (default: nproc)
   --out=DIR          Output dir for Image / dtb / Image-with-dtb (default: ./out/kernel)
   --arch=ARCH        default arm64
