@@ -115,7 +115,8 @@ default target accordingly and records `/etc/tc8-profile`. Baked role packages
 (`poly-<device>-profile-<id>`) supply each role's apps — nothing is fetched.
 | key | st | effect | example |
 |-----|----|--------|---------|
-| `PROFILE` | ✅ | device role. `kiosk` → `graphical.target` (fullscreen `kiosk.service`); `dev` → `multi-user.target` + tty1 autologin + ssh (no kiosk lock); `smart-speaker` (C60) → `multi-user.target`, enables the voice app service if baked, else console. Omitted → the device role is left untouched (a config-only push never resets the role); unknown value → kiosk. | `dev` |
+| `PROFILE` | ✅ | device role. `kiosk` → `graphical.target` (fullscreen `kiosk.service`); `dev` → `multi-user.target` + tty1 autologin + ssh (no kiosk lock); `smart-speaker` (C60) → `multi-user.target`, enables the voice app service if baked, else console; `media-player` → `graphical.target`, kiosk stack with `KIOSK_ENGINE=kodi` (kiosk-launch falls back to cog if `poly-app-kodi` isn't baked). Omitted → the device role is left untouched (a config-only push never resets the role); unknown value → kiosk. | `dev` |
+| `MEDIA_SOURCE` | ▢ | reserved — media library location for the media-player role (local user storage, SMB/NFS share, or DLNA; format undecided). | `nfs://nas/media` |
 
 ### Kiosk / display
 | key | st | effect | example |
