@@ -117,7 +117,7 @@ default target accordingly and records `/etc/tc8-profile`. Baked role packages
 |-----|----|--------|---------|
 | `PROFILE` | ✅ | device role. `kiosk` → `graphical.target` (fullscreen `kiosk.service`); `dev` → `multi-user.target` + tty1 autologin + ssh (no kiosk lock); `smart-speaker` (C60) → `multi-user.target`, enables the voice app service if baked, else console; `media-player` → `graphical.target`, kiosk stack with `KIOSK_ENGINE=kodi` (kiosk-launch falls back to cog if `poly-app-kodi` isn't baked). Omitted → the device role is left untouched (a config-only push never resets the role); unknown value → kiosk. | `dev` |
 | `MEDIA_SOURCE` | ✅ | media-player role: network media source added to Kodi's sources alongside the always-present local `/persist/media` (any Kodi-supported path — `smb://`, `nfs://`, `http://`). | `smb://nas/media` |
-| `MEDIA_MODE` | ✅ | media-player role: `full` (the whole Kodi UI, default) or `photoframe` (boots straight into a fullscreen slideshow of `MEDIA_SOURCE`, else `/persist/media`). | `photoframe` |
+| `MEDIA_MODE` | ✅ | media-player role: `full` (the whole Kodi UI, default) or `photoframe` (boots straight into a fullscreen pictures slideshow of `/persist/media/photos`, or `MEDIA_SOURCE` if set — a pictures path, not the mixed media root). | `photoframe` |
 
 ### Kiosk / display
 | key | st | effect | example |
