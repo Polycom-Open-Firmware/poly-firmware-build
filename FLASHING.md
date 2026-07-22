@@ -48,11 +48,11 @@ The production install path is the
 `fastboot` binary and no driver install). It talks the fastboot protocol
 directly to the stage-2 U-Boot gadget.
 
-Two operator entry paths into fastboot:
+Operator entry paths into fastboot:
 
 - **Fresh, unprovisioned unit — one-time serial bootstrap.** A new unit
   has only stock signed U-Boot, which doesn't auto-enter fastboot. Connect
-  serial, catch the stock prompt (mash Ctrl-C as it powers up), `fastboot 0`,
+  serial, interrupt autoboot (Ctrl-C as it powers up), `fastboot 0`,
   then the web
   tool **enrolls** the unit over WebUSB (lands the stage-2 U-Boot resident,
   sets the chainload `bootcmd` + `saveenv`). One time only — step-by-step in
@@ -60,6 +60,11 @@ Two operator entry paths into fastboot:
 - **Already-enrolled unit — four-finger gesture.** Stage-2 loads on every
   boot; the operator does the finger-poke gesture at the boot selector to
   drop into fastboot. No serial, no host CLI.
+- **Already-enrolled unit, OS booted — `tc8-fastboot`.** From a shell on
+  the running system, `tc8-fastboot` blanks the panel and reboots straight
+  into the fastboot gadget (it stages the one-shot AOSP
+  `bootonce-bootloader` command in `misc`; the bootloader consumes it, so
+  the next power cycle boots normally). No touch access needed.
 
 Then **flashos** writes the OS (the default slot `a` replaces stock
 entirely; pass slot `b` to keep stock Android in A):
