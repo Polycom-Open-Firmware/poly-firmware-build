@@ -61,10 +61,15 @@ Operator entry paths into fastboot:
   boot; the operator does the finger-poke gesture at the boot selector to
   drop into fastboot. No serial, no host CLI.
 - **Already-enrolled unit, OS booted — `tc8-fastboot`.** From a shell on
-  the running system, `tc8-fastboot` blanks the panel and reboots straight
-  into the fastboot gadget (it stages the one-shot AOSP
-  `bootonce-bootloader` command in `misc`; the bootloader consumes it, so
-  the next power cycle boots normally). No touch access needed.
+  the running system, `tc8-fastboot` blanks the panel and reboots into the
+  stage-2 fastboot gadget: a one-shot request staged in the boot-selector
+  sector, consumed on the next boot — the panel shows the fastboot icon,
+  the gadget starts, and the power cycle after that boots normally. No
+  touch access needed. `tc8-fastboot --stock` targets the factory
+  bootloader's fastboot instead (the AOSP `bootonce-bootloader` message in
+  `misc`, which the factory stage-1 consumes itself): the panel stays
+  dark, but the path has no stage-2 dependency — the recovery entry when
+  a stage-2 update breaks.
 
 Then **flashos** writes the OS (the default slot `a` replaces stock
 entirely; pass slot `b` to keep stock Android in A):
